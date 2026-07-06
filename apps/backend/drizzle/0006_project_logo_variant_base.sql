@@ -1,0 +1,1 @@
+-- Project logo variant is introduced with project status.

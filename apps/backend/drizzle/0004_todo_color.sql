@@ -1,0 +1,1 @@
+ALTER TABLE "todo_memos" ADD COLUMN IF NOT EXISTS "color" text DEFAULT '#1c69d4' NOT NULL;

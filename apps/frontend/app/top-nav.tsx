@@ -1,0 +1,31 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+
+const topNavItems = [
+  { href: "/", label: "Dashboard" },
+  { href: "/projects", label: "Projects" },
+  { href: "/settings", label: "Settings" },
+];
+
+export function TopNav({ actions }: { actions?: ReactNode }) {
+  const pathname = usePathname();
+
+  return (
+    <header className="top-nav">
+      <nav className="menu" aria-label="주요 메뉴">
+        {topNavItems.map((item) => {
+          const isActive = item.href === "/" ? pathname === item.href : pathname.startsWith(item.href);
+
+          return (
+            <a aria-current={isActive ? "page" : undefined} href={item.href} key={item.href}>
+              {item.label}
+            </a>
+          );
+        })}
+      </nav>
+      {actions ? <div className="top-nav-actions">{actions}</div> : null}
+    </header>
+  );
+}

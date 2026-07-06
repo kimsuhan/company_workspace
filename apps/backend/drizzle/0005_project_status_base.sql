@@ -1,0 +1,1 @@
+-- Project status tables are introduced after projects exist.
