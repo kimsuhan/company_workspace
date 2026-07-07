@@ -446,6 +446,12 @@ Hero photography fills full-width with no rounding. Photo cards inside grids ret
 
 **`footer`** — Black footer that closes every page. Background `{colors.canvas}`, text `{colors.body}`. 4-column link list at desktop covering BMW M Models / BMW M Lifestyle / Owners / Company. Vertical padding 64px. Bottom row carries the BMW corporate disclaimer in `{typography.caption}` and language selector. The footer never inverts — it stays black even when the body might transition.
 
+## Workspace App UI Notes
+
+- Settings controls must look like controls, not loose text: group custom inputs in a bordered panel, show compact labels, visible input borders, and focus states.
+- Dashboard edit surfaces may use subtle dotted grid guides only in edit mode.
+- Dashboard widget cards keep sharp, low-radius BMW M style borders and avoid nested decorative cards.
+
 ## Do's and Don'ts
 
 ### Do

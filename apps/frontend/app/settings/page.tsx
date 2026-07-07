@@ -3,35 +3,33 @@
 import { Badge } from "@/components/ui/badge";
 import { useEffect, useState } from "react";
 
-const alertsStorageKey = "suhan-dashboard-alerts-enabled";
+import {
+  dashboardGridMaxSize,
+  dashboardGridSizes,
+  dashboardGridStorageKey,
+  defaultDashboardGridLayout,
+  parseDashboardGridLayout,
+  serializeDashboardGridLayout,
+} from "../dashboard-grid-settings";
+import type { DashboardGridLayout } from "../dashboard-grid-settings";
 
-const settingSections = [
-  {
-    title: "Projects",
-    href: "/settings/projects",
-    label: "Active",
-    description: "프로젝트, 상태 API, 로고를 함께 관리합니다.",
-  },
-  {
-    title: "Integrations",
-    href: null,
-    label: "Soon",
-    description: "GitHub, Slack 같은 외부 연결 설정을 둘 자리입니다.",
-  },
-  {
-    title: "Workspace",
-    href: null,
-    label: "Soon",
-    description: "워크스페이스 기본값과 표시 옵션을 관리할 자리입니다.",
-  },
-];
+const alertsStorageKey = "suhan-dashboard-alerts-enabled";
 
 export default function SettingsHomePage() {
   const [areAlertsEnabled, setAreAlertsEnabled] = useState(false);
+  const [dashboardGridLayout, setDashboardGridLayout] = useState<DashboardGridLayout>(defaultDashboardGridLayout);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
 
   useEffect(() => {
     setAreAlertsEnabled(window.localStorage.getItem(alertsStorageKey) === "true");
+
+    const savedGridLayout = window.localStorage.getItem(dashboardGridStorageKey);
+    const parsedGridLayout = parseDashboardGridLayout(savedGridLayout);
+    setDashboardGridLayout(parsedGridLayout);
+
+    if (savedGridLayout !== serializeDashboardGridLayout(parsedGridLayout)) {
+      window.localStorage.setItem(dashboardGridStorageKey, serializeDashboardGridLayout(parsedGridLayout));
+    }
 
     if ("Notification" in window) {
       setNotificationPermission(Notification.permission);
@@ -49,8 +47,79 @@ export default function SettingsHomePage() {
     window.localStorage.setItem(alertsStorageKey, String(isEnabled));
   };
 
+  const updateDashboardGridLayout = (layout: DashboardGridLayout) => {
+    setDashboardGridLayout(layout);
+    window.localStorage.setItem(dashboardGridStorageKey, serializeDashboardGridLayout(layout));
+  };
+
+  const updateDashboardGridPart = (key: keyof DashboardGridLayout, value: string) => {
+    const size = Number(value);
+
+    if (!Number.isInteger(size) || size < 1 || size > dashboardGridMaxSize) {
+      return;
+    }
+
+    updateDashboardGridLayout({ ...dashboardGridLayout, [key]: size });
+  };
+
   return (
     <div className="settings-home-grid">
+      <section className="dashboard-card settings-home-card">
+        <div className="card-header">
+          <div>
+            <p className="eyebrow">Workspace</p>
+            <h2>Dashboard Layout</h2>
+          </div>
+          <Badge className="metric" variant="outline">
+            {dashboardGridLayout.cols}x{dashboardGridLayout.rows}
+          </Badge>
+        </div>
+        <div className="layout-options" aria-label="홈 대시보드 그리드 크기" role="radiogroup">
+          {dashboardGridSizes.map((gridSize) => (
+            <button
+              aria-checked={dashboardGridLayout.cols === gridSize && dashboardGridLayout.rows === gridSize}
+              className={
+                dashboardGridLayout.cols === gridSize && dashboardGridLayout.rows === gridSize
+                  ? "layout-option active"
+                  : "layout-option"
+              }
+              key={gridSize}
+              onClick={() => updateDashboardGridLayout({ cols: gridSize, rows: gridSize })}
+              role="radio"
+              type="button"
+            >
+              {gridSize}x{gridSize}
+            </button>
+          ))}
+        </div>
+        <div className="layout-custom" aria-label="홈 대시보드 커스텀 그리드">
+          <p className="layout-custom-title">Custom</p>
+          <label className="layout-custom-field">
+            <span>Columns</span>
+            <input
+              aria-label="대시보드 열 수"
+              max={dashboardGridMaxSize}
+              min={1}
+              onChange={(event) => updateDashboardGridPart("cols", event.target.value)}
+              type="number"
+              value={dashboardGridLayout.cols}
+            />
+          </label>
+          <span className="layout-custom-divider">x</span>
+          <label className="layout-custom-field">
+            <span>Rows</span>
+            <input
+              aria-label="대시보드 행 수"
+              max={dashboardGridMaxSize}
+              min={1}
+              onChange={(event) => updateDashboardGridPart("rows", event.target.value)}
+              type="number"
+              value={dashboardGridLayout.rows}
+            />
+          </label>
+        </div>
+      </section>
+
       <section className="dashboard-card settings-home-card">
         <div className="card-header">
           <div>
@@ -76,30 +145,6 @@ export default function SettingsHomePage() {
           <i aria-hidden="true" />
         </label>
       </section>
-      {settingSections.map((section) => {
-        const content = (
-          <>
-            <div className="card-header">
-              <div>
-                <p className="eyebrow">Settings</p>
-                <h2>{section.title}</h2>
-              </div>
-              <Badge className="metric" variant="outline">{section.label}</Badge>
-            </div>
-            <p className="card-copy">{section.description}</p>
-          </>
-        );
-
-        return section.href ? (
-          <a className="dashboard-card settings-home-card" href={section.href} key={section.title}>
-            {content}
-          </a>
-        ) : (
-          <section className="dashboard-card settings-home-card disabled" key={section.title}>
-            {content}
-          </section>
-        );
-      })}
     </div>
   );
 }

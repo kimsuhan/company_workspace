@@ -1,13 +1,14 @@
 # 실행 환경
 
 - 개발 서버는 작업자가 직접 실행하고, 작업 종료 전 브라우저에서 실제 화면을 확인한다.
+- 브라우저 화면 검증은 Codex 인앱 브라우저를 우선 사용한다. 사용자의 일반 Chrome은 명시 요청이 있거나 인앱 브라우저로 검증이 불가능한 경우에만 사용하고, 사용 전 이유를 보고한다.
+- Codex 인앱 브라우저 검증 시 `computer-use`로 Codex 앱을 직접 조작하려 하지 말고, `browser:control-in-app-browser` 스킬을 읽은 뒤 `node_repl`에서 browser-client로 `agent.browsers.get("iab")`에 연결한다.
 - 개발 서버 실행 시 필요한 포트가 이미 사용 중이면 기존 서버를 종료한 뒤 다시 실행한다.
 - 백엔드/프론트 포트를 변경하면 `apps/frontend/.env`의 `NEXT_PUBLIC_BACKEND_URL`이 실제 백엔드 `PORT`와 일치하는지 확인한다.
 - SSE를 추가할 때는 idle 연결 끊김 방지를 위해 `retry`와 heartbeat를 함께 둔다.
 - Project Health 동작/API/등록 방법은 `docs/project-health.md`를 기준으로 확인한다.
 - 공통 파일 업로드 구조는 `docs/files/common-file-upload.md`를 기준으로 확인한다.
 - PM2 배포 패키징/갱신 절차는 `docs/deploy/pm2.md`를 기준으로 확인한다.
-- 반복되면 스킬화할 후보는 `docs/evolve/skill-candidates.md`에 누적하고, evolve 때 확인한다.
 
 # 디자인 작업 지침
 

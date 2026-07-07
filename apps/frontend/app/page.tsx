@@ -3,8 +3,21 @@
 import { Popover } from "@base-ui/react/popover";
 import Chart from "chart.js/auto";
 import type { Chart as ChartInstance, TooltipItem } from "chart.js";
-import { ArrowUpRight, Calendar, Check, ChevronLeft, ChevronRight, FolderOpen, RotateCcw, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  Calendar,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  FolderOpen,
+  GripVertical,
+  RotateCcw,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { GridLayout, useContainerWidth } from "react-grid-layout";
+import { absoluteStrategy } from "react-grid-layout/core";
+import type { Layout, LayoutItem } from "react-grid-layout";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +27,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { TodoContentEditor } from "./todo-content-editor";
+import {
+  dashboardWidgetLayoutStorageKey,
+  dashboardWidgetMaxRows,
+  defaultDashboardWidgetLayout,
+  dashboardGridStorageKey,
+  defaultDashboardGridLayout,
+  isDashboardWidgetId,
+  normalizeDashboardWidgetLayout,
+  parseDashboardGridLayout,
+  parseDashboardWidgetLayout,
+  serializeDashboardGridLayout,
+  serializeDashboardWidgetLayout,
+} from "./dashboard-grid-settings";
+import type { DashboardGridLayout, DashboardWidgetId, DashboardWidgetLayout } from "./dashboard-grid-settings";
 import {
   findNewActiveReviewPullRequests,
   findNewlyUnhealthySites,
@@ -119,7 +146,11 @@ export default function Home() {
   const [reviewPrContextMenu, setReviewPrContextMenu] = useState<ReviewPrContextMenu | null>(null);
   const [selectedProjectStatusId, setSelectedProjectStatusId] = useState<number | null>(null);
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenu | null>(null);
+  const [dashboardGridLayoutSetting, setDashboardGridLayoutSetting] = useState<DashboardGridLayout>(defaultDashboardGridLayout);
+  const [dashboardWidgetLayout, setDashboardWidgetLayout] = useState<DashboardWidgetLayout[]>(defaultDashboardWidgetLayout);
+  const [isDashboardEditing, setIsDashboardEditing] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const { containerRef: dashboardGridRef, mounted: isDashboardGridMeasured, width: dashboardGridWidth } = useContainerWidth();
   const healthChartRef = useRef<HTMLCanvasElement | null>(null);
   const alertEnabledRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -138,6 +169,29 @@ export default function Home() {
   const isProjectsLive = projectsStatus === "Live";
   const liveServiceCount = [isReviewPrsLive, isTodoLive, isProjectsLive].filter(Boolean).length;
   const liveSummaryLabel = liveServiceCount === 3 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
+  const effectiveDashboardGridSize = isDashboardGridMeasured && dashboardGridWidth < 860 ? 1 : dashboardGridLayoutSetting.cols;
+  const dashboardGridRowHeight = effectiveDashboardGridSize === 1 ? 260 : 220;
+  const dashboardGridEditMinHeight =
+    dashboardGridLayoutSetting.rows * dashboardGridRowHeight + Math.max(0, dashboardGridLayoutSetting.rows - 1) * 16;
+  const dashboardGridLayout: Layout = [
+    ...dashboardWidgetLayout.map((widget) => {
+      const width = Math.min(widget.w, effectiveDashboardGridSize);
+
+      return {
+        i: widget.id,
+        x: Math.min(widget.x, effectiveDashboardGridSize - width),
+        y: widget.y,
+        w: width,
+        h: Math.min(widget.h, effectiveDashboardGridSize),
+        minW: 1,
+        minH: 1,
+        maxW: effectiveDashboardGridSize,
+        maxH: dashboardWidgetMaxRows,
+        isDraggable: isDashboardEditing,
+        isResizable: isDashboardEditing,
+      };
+    }),
+  ];
   const selectedDueDate = parseDateInput(todoDueDateDraft);
   const calendarDays = getCalendarDays(calendarMonth);
   const formatDate = (date: string | null) => {
@@ -347,6 +401,50 @@ export default function Home() {
     new Notification(title, { body });
   };
 
+  const saveDashboardWidgetLayout = (layout: DashboardWidgetLayout[]) => {
+    setDashboardWidgetLayout(layout);
+    window.localStorage.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(layout));
+  };
+
+  const updateDashboardLayout = (layout: Layout, changedItem?: LayoutItem | null) => {
+    if (effectiveDashboardGridSize !== dashboardGridLayoutSetting.cols) {
+      return;
+    }
+
+    const nextLayout =
+      changedItem && isDashboardWidgetId(changedItem.i)
+        ? dashboardWidgetLayout.map((widget) =>
+            widget.id === changedItem.i
+              ? { i: widget.id, x: changedItem.x, y: changedItem.y, w: changedItem.w, h: changedItem.h }
+              : { i: widget.id, x: widget.x, y: widget.y, w: widget.w, h: widget.h },
+          )
+        : layout;
+
+    saveDashboardWidgetLayout(normalizeDashboardWidgetLayout(nextLayout, dashboardGridLayoutSetting.cols));
+  };
+
+  const updateDashboardLayoutAfterItemChange = (layout: Layout, _oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
+    updateDashboardLayout(layout, newItem);
+  };
+
+  const getDashboardWidgetEditControls = (_widgetId: DashboardWidgetId) => {
+    if (!isDashboardEditing) {
+      return null;
+    }
+
+    return (
+      <div className="dashboard-widget-edit-controls">
+        <span
+          className="dashboard-drag-handle"
+          aria-label="드래그 핸들"
+          title="드래그해서 이동"
+        >
+          <GripVertical size={16} />
+        </span>
+      </div>
+    );
+  };
+
   useEffect(() => {
     const isEnabled = window.localStorage.getItem(alertsStorageKey) === "true";
 
@@ -437,6 +535,23 @@ export default function Home() {
     }, 60_000);
 
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const savedGridLayout = window.localStorage.getItem(dashboardGridStorageKey);
+    const parsedGridLayout = parseDashboardGridLayout(savedGridLayout);
+    const savedWidgetLayout = window.localStorage.getItem(dashboardWidgetLayoutStorageKey);
+    const parsedWidgetLayout = parseDashboardWidgetLayout(savedWidgetLayout);
+    setDashboardGridLayoutSetting(parsedGridLayout);
+    setDashboardWidgetLayout(parsedWidgetLayout);
+
+    if (savedGridLayout !== serializeDashboardGridLayout(parsedGridLayout)) {
+      window.localStorage.setItem(dashboardGridStorageKey, serializeDashboardGridLayout(parsedGridLayout));
+    }
+
+    if (savedWidgetLayout !== serializeDashboardWidgetLayout(parsedWidgetLayout)) {
+      window.localStorage.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(parsedWidgetLayout));
+    }
   }, []);
 
   useEffect(() => {
@@ -614,15 +729,54 @@ export default function Home() {
               <p className="eyebrow">Company workspace</p>
               <h1 id="dashboard-title">Work Dashboard</h1>
             </div>
+            <div className="dashboard-heading-actions">
+              <Button
+                className={isDashboardEditing ? "quick-add-button active" : "quick-add-button"}
+                onClick={() => setIsDashboardEditing((value) => !value)}
+                type="button"
+              >
+                {isDashboardEditing ? "Done" : "Edit"}
+              </Button>
+            </div>
           </div>
 
-          <div className="dashboard-grid">
-            <section className="dashboard-card pr-card" id="github" aria-labelledby="github-title">
+          <div className="dashboard-grid-shell" ref={dashboardGridRef}>
+            <GridLayout
+              autoSize
+              className={isDashboardEditing ? "dashboard-grid editing" : "dashboard-grid"}
+              dragConfig={{
+                enabled: isDashboardEditing,
+                handle: ".dashboard-drag-handle",
+                cancel: ".dashboard-grid-no-drag",
+                threshold: 6,
+              }}
+              gridConfig={{
+                cols: effectiveDashboardGridSize,
+                rowHeight: dashboardGridRowHeight,
+                margin: [16, 16],
+                containerPadding: [0, 0],
+                maxRows: Infinity,
+              }}
+              layout={dashboardGridLayout}
+              onDragStop={updateDashboardLayoutAfterItemChange}
+              onResizeStop={updateDashboardLayoutAfterItemChange}
+              positionStrategy={absoluteStrategy}
+              resizeConfig={{ enabled: isDashboardEditing, handles: ["se"] }}
+              style={isDashboardEditing ? { minHeight: dashboardGridEditMinHeight } : undefined}
+              width={dashboardGridWidth}
+            >
+            <section
+              className="dashboard-card pr-card"
+              id="github"
+              key="review-prs"
+              aria-labelledby="github-title"
+            >
               <div className="card-header">
                 <div>
                   <p className="eyebrow">Github</p>
                   <h2 id="github-title">Review PRs</h2>
                 </div>
+                {getDashboardWidgetEditControls("review-prs")}
               </div>
               <div className="pr-list">
                 {reviewPullRequests.length === 0 ? (
@@ -660,7 +814,11 @@ export default function Home() {
               </div>
             </section>
 
-            <section className="dashboard-card" aria-labelledby="flow-title">
+            <section
+              className="dashboard-card"
+              key="todo"
+              aria-labelledby="flow-title"
+            >
               <div className="card-header">
                 <div>
                   <p className="eyebrow">Memo</p>
@@ -670,6 +828,7 @@ export default function Home() {
                   <Button className="quick-add-button" type="button" onClick={openNewTodo}>
                     추가
                   </Button>
+                  {getDashboardWidgetEditControls("todo")}
                 </div>
               </div>
               <div className="todo-list">
@@ -712,16 +871,23 @@ export default function Home() {
               </div>
             </section>
 
-            <section className="dashboard-card" aria-labelledby="projects-title">
+            <section
+              className="dashboard-card"
+              key="projects"
+              aria-labelledby="projects-title"
+            >
               <div className="card-header">
                 <div>
                   <p className="eyebrow">Overview</p>
                   <h2 id="projects-title">Projects</h2>
                 </div>
-                <a className="settings-shortcut-link" href="/settings/projects">
-                  설정 바로가기
-                  <ArrowUpRight size={18} strokeWidth={1.7} />
-                </a>
+                <div className="card-actions">
+                  <a className="settings-shortcut-link" href="/settings/projects">
+                    설정 바로가기
+                    <ArrowUpRight size={18} strokeWidth={1.7} />
+                  </a>
+                  {getDashboardWidgetEditControls("projects")}
+                </div>
               </div>
               <div className="pr-list">
                 {projects.length === 0 ? (
@@ -763,6 +929,7 @@ export default function Home() {
                 )}
               </div>
             </section>
+            </GridLayout>
           </div>
       </section>
 

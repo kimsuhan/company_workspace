@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { TopNav } from "../top-nav";
 
 const settingsNavItems = [
-  { href: "/settings", label: "Overview" },
+  { href: "/settings", label: "Workspace Settings" },
   { href: "/settings/projects", label: "Projects" },
 ];
 
