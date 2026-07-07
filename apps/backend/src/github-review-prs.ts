@@ -13,6 +13,7 @@ type GithubSearchItem = {
   number: number;
   title: string;
   html_url: string;
+  pull_request?: { url: string };
   repository_url: string;
   user: { login: string } | null;
   draft?: boolean;
@@ -23,12 +24,17 @@ type GithubSearchResponse = {
   items: GithubSearchItem[];
 };
 
+type GithubPullRequestResponse = {
+  head?: { ref?: string };
+};
+
 export type ReviewPullRequest = {
   githubIssueId: number;
   repo: string;
   number: number;
   title: string;
   url: string;
+  branchName: string | null;
   author: string;
   status: string;
   isDraft: boolean;
@@ -62,6 +68,7 @@ export function getGithubReviewSearchQuery(env: NodeJS.ProcessEnv = process.env)
 
 export function mapGithubSearchItemToReviewPullRequest(
   item: GithubSearchItem,
+  branchName: string | null = null,
 ): ReviewPullRequest {
   return {
     githubIssueId: item.id,
@@ -69,6 +76,7 @@ export function mapGithubSearchItemToReviewPullRequest(
     number: item.number,
     title: item.title,
     url: item.html_url,
+    branchName,
     author: item.user?.login ?? "unknown",
     status: item.draft ? "Draft" : "Review",
     isDraft: item.draft ?? false,
@@ -126,7 +134,29 @@ export async function fetchGithubReviewPullRequests(
   pollState.etag = response.headers.get("etag") ?? undefined;
 
   const data = (await response.json()) as GithubSearchResponse;
-  return data.items.map(mapGithubSearchItemToReviewPullRequest);
+  return Promise.all(
+    data.items.map(async (item) =>
+      mapGithubSearchItemToReviewPullRequest(item, await fetchGithubPullRequestBranchName(item, headers)),
+    ),
+  );
+}
+
+async function fetchGithubPullRequestBranchName(item: GithubSearchItem, headers: Headers): Promise<string | null> {
+  if (!item.pull_request?.url) {
+    return null;
+  }
+
+  const detailHeaders = new Headers(headers);
+  detailHeaders.delete("if-none-match");
+
+  const response = await fetch(item.pull_request.url, { headers: detailHeaders });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as GithubPullRequestResponse;
+  return data.head?.ref?.trim() || null;
 }
 
 export async function listReviewPullRequests(): Promise<ReviewPullRequest[]> {
@@ -141,6 +171,7 @@ export async function listReviewPullRequests(): Promise<ReviewPullRequest[]> {
     number: row.number,
     title: row.title,
     url: row.url,
+    branchName: row.branchName,
     author: row.author,
     status: row.status,
     isDraft: row.isDraft,
@@ -172,6 +203,7 @@ export async function saveReviewPullRequests(
           number: pullRequest.number,
           title: pullRequest.title,
           url: pullRequest.url,
+          branchName: pullRequest.branchName,
           author: pullRequest.author,
           status: pullRequest.status,
           isDraft: pullRequest.isDraft,

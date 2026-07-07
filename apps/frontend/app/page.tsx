@@ -28,6 +28,7 @@ type ReviewPullRequest = {
   number: number;
   title: string;
   url: string;
+  branchName: string | null;
   author: string;
   status: string;
   isDraft: boolean;
@@ -89,6 +90,12 @@ type TodoContextMenu = {
   todoId: number;
 };
 
+type ReviewPrContextMenu = {
+  x: number;
+  y: number;
+  githubIssueId: number;
+};
+
 const todoColorPresets = ["#1c69d4", "#8b5cf6", "#e22718", "#f4b400", "#0fa336", "#7e7e7e"];
 
 export default function Home() {
@@ -109,6 +116,7 @@ export default function Home() {
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [todoCommentDraft, setTodoCommentDraft] = useState("");
   const [todoContextMenu, setTodoContextMenu] = useState<TodoContextMenu | null>(null);
+  const [reviewPrContextMenu, setReviewPrContextMenu] = useState<ReviewPrContextMenu | null>(null);
   const [selectedProjectStatusId, setSelectedProjectStatusId] = useState<number | null>(null);
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenu | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -120,6 +128,8 @@ export default function Home() {
 
   const selectedTodo = todoMemos.find((memo) => memo.id === selectedTodoId);
   const todoContextTarget = todoMemos.find((memo) => memo.id === todoContextMenu?.todoId) ?? null;
+  const reviewPrContextTarget =
+    reviewPullRequests.find((pullRequest) => pullRequest.githubIssueId === reviewPrContextMenu?.githubIssueId) ?? null;
   const selectedProjectStatus = projects.find((project) => project.id === selectedProjectStatusId && project.health) ?? null;
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:13001";
   const alertsStorageKey = "suhan-dashboard-alerts-enabled";
@@ -272,6 +282,20 @@ export default function Home() {
     }
 
     return response.json();
+  };
+
+  const openReviewPr = (pullRequest: ReviewPullRequest) => {
+    setReviewPrContextMenu(null);
+    window.open(pullRequest.url, "_blank", "noopener,noreferrer");
+  };
+
+  const copyReviewPrBranchName = async (pullRequest: ReviewPullRequest) => {
+    if (!pullRequest.branchName) {
+      return;
+    }
+
+    setReviewPrContextMenu(null);
+    await navigator.clipboard.writeText(pullRequest.branchName);
   };
 
   const playAlertSound = async () => {
@@ -552,9 +576,11 @@ export default function Home() {
   return (
     <main
       className="home"
+      onContextMenu={(event) => event.preventDefault()}
       onClick={() => {
         setProjectContextMenu(null);
         setTodoContextMenu(null);
+        setReviewPrContextMenu(null);
       }}
     >
       <TopNav
@@ -606,15 +632,25 @@ export default function Home() {
                     <article
                       className={pullRequest.isActive ? "pr-item" : "pr-item pr-item-handled"}
                       key={pullRequest.githubIssueId}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setTodoContextMenu(null);
+                        setProjectContextMenu(null);
+                        setReviewPrContextMenu({
+                          x: event.clientX,
+                          y: event.clientY,
+                          githubIssueId: pullRequest.githubIssueId,
+                        });
+                      }}
                     >
-                      <a href={pullRequest.url} target="_blank" rel="noreferrer">
+                      <div className="pr-item-main">
                         <p className="repo">{pullRequest.repo}</p>
                         <h3>{pullRequest.title}</h3>
                         <p className="meta">
                           #{pullRequest.number} · {pullRequest.author} · updated{" "}
                           {new Date(pullRequest.githubUpdatedAt).toLocaleDateString()}
                         </p>
-                      </a>
+                      </div>
                       <Badge className="status-badge" variant="outline">
                         {pullRequest.isActive ? pullRequest.status : "Handled"}
                       </Badge>
@@ -649,6 +685,8 @@ export default function Home() {
                         key={memo.id}
                         onContextMenu={(event) => {
                           event.preventDefault();
+                          setReviewPrContextMenu(null);
+                          setProjectContextMenu(null);
                           setTodoContextMenu({ x: event.clientX, y: event.clientY, todoId: memo.id });
                         }}
                       >
@@ -677,7 +715,7 @@ export default function Home() {
             <section className="dashboard-card" aria-labelledby="projects-title">
               <div className="card-header">
                 <div>
-                  <p className="eyebrow">Projects</p>
+                  <p className="eyebrow">Overview</p>
                   <h2 id="projects-title">Projects</h2>
                 </div>
                 <a className="settings-shortcut-link" href="/settings/projects">
@@ -695,6 +733,8 @@ export default function Home() {
                       key={project.id}
                       onContextMenu={(event) => {
                         event.preventDefault();
+                        setReviewPrContextMenu(null);
+                        setTodoContextMenu(null);
                         setProjectContextMenu({ x: event.clientX, y: event.clientY, projectId: project.id });
                       }}
                     >
@@ -737,6 +777,25 @@ export default function Home() {
           </button>
           <button className="danger" type="button" onClick={() => void deleteTodoMemo(todoContextTarget)}>
             삭제
+          </button>
+        </div>
+      ) : null}
+
+      {reviewPrContextMenu && reviewPrContextTarget ? (
+        <div
+          className="tree-context-menu"
+          style={{ left: reviewPrContextMenu.x, top: reviewPrContextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" onClick={() => openReviewPr(reviewPrContextTarget)}>
+            바로가기
+          </button>
+          <button
+            type="button"
+            disabled={!reviewPrContextTarget.branchName}
+            onClick={() => void copyReviewPrBranchName(reviewPrContextTarget)}
+          >
+            브랜치명 복사
           </button>
         </div>
       ) : null}

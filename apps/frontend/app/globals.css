@@ -830,6 +830,7 @@ body {
   color: #e22718;
 }
 
+.pr-item-main,
 .pr-item a {
   min-width: 0;
   color: inherit;
@@ -1875,6 +1876,15 @@ body {
 .tree-context-menu button:hover {
   background: #1a1a1a;
   color: #fff;
+}
+
+.tree-context-menu button:disabled {
+  color: #555;
+  cursor: not-allowed;
+}
+
+.tree-context-menu button:disabled:hover {
+  background: transparent;
 }
 
 .tree-context-menu button.danger {

@@ -18,6 +18,7 @@ export const githubReviewPullRequests = pgTable("github_review_pull_requests", {
   number: integer("number").notNull(),
   title: text("title").notNull(),
   url: text("url").notNull(),
+  branchName: text("branch_name"),
   author: text("author").notNull(),
   status: text("status").notNull(),
   isDraft: boolean("is_draft").notNull(),
