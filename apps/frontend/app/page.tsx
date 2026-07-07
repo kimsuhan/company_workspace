@@ -12,6 +12,7 @@ import {
   ChevronRight,
   FolderOpen,
   GripVertical,
+  StickyNote,
   RotateCcw,
   X,
 } from "lucide-react";
@@ -27,7 +28,7 @@ import { IconActionButton } from "@/components/ui/icon-action-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-import { TodoContentEditor } from "./todo-content-editor";
+import { RichTextEditor } from "./rich-text-editor";
 import {
   dashboardWidgetLayoutStorageKey,
   dashboardWidgetMaxRows,
@@ -73,6 +74,7 @@ type TodoComment = {
 
 type TodoMemo = {
   id: number;
+  projectId: number;
   title: string;
   content: string;
   color: string;
@@ -81,6 +83,18 @@ type TodoMemo = {
   updatedAt: string;
   completedAt: string | null;
   comments: TodoComment[];
+};
+
+type Note = {
+  id: number;
+  kind: "inbox" | "daily";
+  title: string | null;
+  content: string;
+  color: string;
+  noteDate: string | null;
+  isArchived: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type ProjectHealth = {
@@ -131,11 +145,19 @@ export default function Home() {
   const [reviewPrsStatus, setReviewPrsStatus] = useState("Loading");
   const [todoMemos, setTodoMemos] = useState<TodoMemo[]>([]);
   const [todoStatus, setTodoStatus] = useState("Loading");
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [notesStatus, setNotesStatus] = useState("Loading");
+  const [selectedNoteId, setSelectedNoteId] = useState<number | null>(null);
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [noteTitleDraft, setNoteTitleDraft] = useState("");
+  const [noteContentDraft, setNoteContentDraft] = useState("");
+  const [noteContentTextDraft, setNoteContentTextDraft] = useState("");
   const [projectsStatus, setProjectsStatus] = useState("Loading");
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedTodoId, setSelectedTodoId] = useState<number | null>(null);
   const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
   const [todoTitleDraft, setTodoTitleDraft] = useState("");
+  const [todoProjectIdDraft, setTodoProjectIdDraft] = useState("");
   const [todoContentDraft, setTodoContentDraft] = useState("");
   const [todoContentTextDraft, setTodoContentTextDraft] = useState("");
   const [todoColorDraft, setTodoColorDraft] = useState("#1c69d4");
@@ -161,16 +183,24 @@ export default function Home() {
 
   const selectedTodo = todoMemos.find((memo) => memo.id === selectedTodoId);
   const todoContextTarget = todoMemos.find((memo) => memo.id === todoContextMenu?.todoId) ?? null;
+  const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
   const reviewPrContextTarget =
     reviewPullRequests.find((pullRequest) => pullRequest.githubIssueId === reviewPrContextMenu?.githubIssueId) ?? null;
   const selectedProjectStatus = projects.find((project) => project.id === selectedProjectStatusId && project.health) ?? null;
+  const todoGroups = projects
+    .map((project) => ({
+      project,
+      memos: todoMemos.filter((memo) => memo.projectId === project.id),
+    }))
+    .filter((group) => group.memos.length > 0);
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:13001";
   const alertsStorageKey = "suhan-dashboard-alerts-enabled";
   const isReviewPrsLive = reviewPrsStatus === "Live";
   const isTodoLive = todoStatus === "Live";
+  const isNotesLive = notesStatus === "Live";
   const isProjectsLive = projectsStatus === "Live";
-  const liveServiceCount = [isReviewPrsLive, isTodoLive, isProjectsLive].filter(Boolean).length;
-  const liveSummaryLabel = liveServiceCount === 3 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
+  const liveServiceCount = [isReviewPrsLive, isTodoLive, isNotesLive, isProjectsLive].filter(Boolean).length;
+  const liveSummaryLabel = liveServiceCount === 4 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
   const effectiveDashboardGridSize = isDashboardGridMeasured && dashboardGridWidth < 860 ? 1 : dashboardGridLayoutSetting.cols;
   const isDashboardGridReady = isDashboardLayoutReady && isDashboardGridMeasured && dashboardGridWidth > 0;
   const dashboardGridRowHeight = effectiveDashboardGridSize === 1 ? 260 : 220;
@@ -197,6 +227,7 @@ export default function Home() {
   ];
   const selectedDueDate = parseDateInput(todoDueDateDraft);
   const calendarDays = getCalendarDays(calendarMonth);
+  const inboxNotes = notes.filter((note) => note.kind === "inbox");
   const formatDate = (date: string | null) => {
     if (!date) {
       return "-";
@@ -236,7 +267,14 @@ export default function Home() {
   };
 
   const openNewTodo = () => {
+    const defaultProject = projects[0];
+
+    if (!defaultProject) {
+      return;
+    }
+
     setSelectedTodoId(null);
+    setTodoProjectIdDraft(String(defaultProject.id));
     setTodoTitleDraft("");
     setTodoContentDraft("");
     setTodoContentTextDraft("");
@@ -249,6 +287,7 @@ export default function Home() {
 
   const openTodo = (memo: TodoMemo) => {
     setSelectedTodoId(memo.id);
+    setTodoProjectIdDraft(String(memo.projectId));
     setTodoTitleDraft(memo.title);
     setTodoContentDraft(memo.content);
     setTodoContentTextDraft(getContentText(memo.content));
@@ -261,15 +300,16 @@ export default function Home() {
 
   const persistTodo = async () => {
     const title = todoTitleDraft.trim();
+    const projectId = Number(todoProjectIdDraft);
     const content = todoContentDraft.trim();
 
-    if (!title || !todoContentTextDraft.trim()) {
+    if (!Number.isInteger(projectId) || projectId <= 0 || !title || !todoContentTextDraft.trim()) {
       return;
     }
 
     await requestTodo(selectedTodoId === null ? "/todos" : `/todos/${selectedTodoId}`, {
       method: selectedTodoId === null ? "POST" : "PATCH",
-      body: JSON.stringify({ title, content, color: todoColorDraft, dueDate: todoDueDateDraft || null }),
+      body: JSON.stringify({ projectId, title, content, color: todoColorDraft, dueDate: todoDueDateDraft || null }),
     });
   };
 
@@ -339,6 +379,71 @@ export default function Home() {
     }
 
     return response.json();
+  };
+
+  const openNote = (note: Note) => {
+    setSelectedNoteId(note.id);
+    setNoteTitleDraft(note.title ?? "");
+    setNoteContentDraft(note.content);
+    setNoteContentTextDraft(getContentText(note.content));
+    setIsNoteModalOpen(true);
+  };
+
+  const openNewInboxNote = async () => {
+    const response = await fetch("/api/notes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "inbox", title: null, content: "새 메모", color: "#f4b400" }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Note request failed: ${response.status}`);
+    }
+
+    const note = (await response.json()) as Note;
+    setNotes((items) => [note, ...items.filter((item) => item.id !== note.id)]);
+    openNote(note);
+  };
+
+  const persistNote = async () => {
+    if (!selectedNote || !noteContentTextDraft.trim()) {
+      return;
+    }
+
+    const response = await fetch(`/api/notes/${selectedNote.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: noteTitleDraft.trim() || null, content: noteContentDraft.trim() }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Note request failed: ${response.status}`);
+    }
+
+    const note = (await response.json()) as Note;
+    setNotes((items) => items.map((item) => (item.id === note.id ? note : item)));
+  };
+
+  const closeNoteModal = async () => {
+    await persistNote();
+    setIsNoteModalOpen(false);
+    setSelectedNoteId(null);
+  };
+
+  const deleteNote = async () => {
+    if (!selectedNote) {
+      return;
+    }
+
+    const response = await fetch(`/api/notes/${selectedNote.id}`, { method: "DELETE" });
+
+    if (!response.ok) {
+      throw new Error(`Note request failed: ${response.status}`);
+    }
+
+    setNotes((items) => items.filter((item) => item.id !== selectedNote.id));
+    setIsNoteModalOpen(false);
+    setSelectedNoteId(null);
   };
 
   const openReviewPr = (pullRequest: ReviewPullRequest) => {
@@ -533,6 +638,39 @@ export default function Home() {
   }, [backendUrl]);
 
   useEffect(() => {
+    const notesUrl = "/api/notes";
+    const events = new EventSource(`${notesUrl}/events`);
+
+    fetch(notesUrl)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Notes failed: ${response.status}`);
+        }
+
+        return response.json() as Promise<Note[]>;
+      })
+      .then((items) => {
+        setNotes(items);
+        setNotesStatus("Live");
+      })
+      .catch(() => {
+        setNotesStatus("Offline");
+      });
+
+    events.onmessage = (event) => {
+      setNotes(JSON.parse(event.data) as Note[]);
+      setNotesStatus("Live");
+    };
+    events.onerror = () => {
+      setNotesStatus("Offline");
+    };
+
+    return () => {
+      events.close();
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
     }, 60_000);
@@ -719,6 +857,10 @@ export default function Home() {
                 Todoist {isTodoLive ? "Online" : "Offline"}
               </span>
               <span>
+                <i className={isNotesLive ? "status-dot live" : "status-dot offline"} aria-hidden="true" />
+                Note {isNotesLive ? "Online" : "Offline"}
+              </span>
+              <span>
                 <i className={isProjectsLive ? "status-dot live" : "status-dot offline"} aria-hidden="true" />
                 Project Status {isProjectsLive ? "Online" : "Offline"}
               </span>
@@ -827,52 +969,74 @@ export default function Home() {
             >
               <div className="card-header">
                 <div>
-                  <p className="eyebrow">Memo</p>
+                  <p className="eyebrow">Projects</p>
                   <h2 id="flow-title">TODOIST</h2>
                 </div>
                 <div className="card-actions">
-                  <Button className="quick-add-button" type="button" onClick={openNewTodo}>
-                    추가
-                  </Button>
+                  {projects.length === 0 ? (
+                    <Link className="settings-shortcut-link" href="/settings/projects">
+                      프로젝트 설정
+                      <ArrowUpRight size={18} strokeWidth={1.7} />
+                    </Link>
+                  ) : (
+                    <Button className="quick-add-button" type="button" onClick={openNewTodo}>
+                      추가
+                    </Button>
+                  )}
                   {getDashboardWidgetEditControls("todo")}
                 </div>
               </div>
               <div className="todo-list">
-                {todoMemos.length === 0 ? (
-                  <p className="card-copy">등록된 메모가 없습니다.</p>
+                {todoGroups.length === 0 ? (
+                  <p className="card-copy">{todoMemos.length === 0 ? "등록된 메모가 없습니다." : "프로젝트 정보를 불러오는 중입니다."}</p>
                 ) : (
-                  todoMemos.map((memo) => {
-                    const dueLabel = getDueLabel(memo);
+                  todoGroups.map(({ project, memos }) => (
+                    <section className="todo-project-group" key={project.id} aria-label={`${project.name} 할일`}>
+                      <div className="todo-project-heading">
+                        <span
+                          className={project.logoUrl ? `todo-project-logo image ${project.logoVariant === "black" ? "black-logo" : "white-logo"}` : "todo-project-logo"}
+                          aria-hidden="true"
+                        >
+                          {project.logoUrl ? <img src={project.logoUrl} alt="" /> : <FolderOpen size={14} />}
+                        </span>
+                        <h3>{project.name}</h3>
+                      </div>
+                      <div className="todo-project-items">
+                        {memos.map((memo) => {
+                          const dueLabel = getDueLabel(memo);
 
-                    return (
-                      <article
-                        className={memo.completedAt ? "todo-item todo-item-done" : "todo-item"}
-                        key={memo.id}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          setReviewPrContextMenu(null);
-                          setProjectContextMenu(null);
-                          setTodoContextMenu({ x: event.clientX, y: event.clientY, todoId: memo.id });
-                        }}
-                      >
-                        <span className="todo-color-bar" style={{ backgroundColor: memo.color }} aria-hidden="true" />
-                        <button className="todo-open-button" type="button" onClick={() => openTodo(memo)}>
-                          <span>
-                            <strong>{memo.title}</strong>
-                            <small>
-                              {memo.dueDate ? `마감 ${formatDate(memo.dueDate)} · ` : ""}
-                              작성 {formatDate(memo.createdAt)}
-                            </small>
-                          </span>
-                        </button>
-                        {dueLabel ? (
-                          <div className="todo-row-actions">
-                            <span className="due-alert">{dueLabel}</span>
-                          </div>
-                        ) : null}
-                      </article>
-                    );
-                  })
+                          return (
+                            <article
+                              className={memo.completedAt ? "todo-item todo-item-done" : "todo-item"}
+                              key={memo.id}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                setReviewPrContextMenu(null);
+                                setProjectContextMenu(null);
+                                setTodoContextMenu({ x: event.clientX, y: event.clientY, todoId: memo.id });
+                              }}
+                            >
+                              <span className="todo-color-bar" style={{ backgroundColor: memo.color }} aria-hidden="true" />
+                              <button className="todo-open-button" type="button" onClick={() => openTodo(memo)}>
+                                <span>
+                                  <strong>{memo.title}</strong>
+                                  <small>
+                                    {memo.dueDate ? `마감 ${formatDate(memo.dueDate)} · ` : ""}
+                                    작성 {formatDate(memo.createdAt)}
+                                  </small>
+                                </span>
+                              </button>
+                              {dueLabel ? (
+                                <div className="todo-row-actions">
+                                  <span className="due-alert">{dueLabel}</span>
+                                </div>
+                              ) : null}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))
                 )}
               </div>
             </section>
@@ -884,8 +1048,8 @@ export default function Home() {
             >
               <div className="card-header">
                 <div>
-                  <p className="eyebrow">Overview</p>
-                  <h2 id="projects-title">Projects</h2>
+                  <p className="eyebrow">Projects</p>
+                  <h2 id="projects-title">Info</h2>
                 </div>
                 <div className="card-actions">
                   <Link className="settings-shortcut-link" href="/settings/projects">
@@ -931,6 +1095,41 @@ export default function Home() {
                         )}
                       </div>
                     </article>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section
+              className="dashboard-card"
+              key="inbox"
+              aria-labelledby="inbox-title"
+            >
+              <div className="card-header">
+                <div>
+                  <p className="eyebrow">Note</p>
+                  <h2 id="inbox-title">Inbox</h2>
+                </div>
+                <div className="card-actions">
+                  <Button className="quick-add-button" type="button" onClick={() => void openNewInboxNote()}>
+                    추가
+                  </Button>
+                  <Link className="settings-shortcut-link" href="/notes">
+                    전체 보기
+                    <ArrowUpRight size={18} strokeWidth={1.7} />
+                  </Link>
+                  {getDashboardWidgetEditControls("inbox")}
+                </div>
+              </div>
+              <div className="inbox-note-list">
+                {inboxNotes.length === 0 ? (
+                  <p className="card-copy">휘갈겨 둔 메모가 없습니다.</p>
+                ) : (
+                  inboxNotes.map((note) => (
+                    <button className="inbox-note-item" type="button" key={note.id} onClick={() => openNote(note)}>
+                      <StickyNote size={16} />
+                      <span>{note.title || getContentText(note.content) || "Untitled"}</span>
+                    </button>
                   ))
                 )}
               </div>
@@ -1042,6 +1241,17 @@ export default function Home() {
             </div>
 
             <Label className="field">
+              <span>프로젝트</span>
+              <select value={todoProjectIdDraft} onChange={(event) => setTodoProjectIdDraft(event.target.value)}>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </Label>
+
+            <Label className="field">
               <span>제목</span>
               <Input
                 value={todoTitleDraft}
@@ -1052,8 +1262,9 @@ export default function Home() {
 
             <div className="field">
               <span>내용</span>
-              <TodoContentEditor
+              <RichTextEditor
                 key={selectedTodoId ?? "new"}
+                variant="compact"
                 value={todoContentDraft}
                 onChange={(html, text) => {
                   setTodoContentDraft(html);
@@ -1192,6 +1403,50 @@ export default function Home() {
               </div>
             ) : null}
           </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isNoteModalOpen}
+        onOpenChange={(open) => (open ? setIsNoteModalOpen(true) : void closeNoteModal())}
+      >
+        <DialogContent className="todo-modal" showCloseButton={false}>
+          <div className="modal-header">
+            <div>
+              <p className="eyebrow">Inbox</p>
+              <DialogTitle>{selectedNote ? "메모 상세" : "새 메모"}</DialogTitle>
+            </div>
+            <div className="modal-header-actions">
+              {selectedNote ? <IconActionButton action="delete" type="button" onClick={() => void deleteNote()} /> : null}
+              <Button
+                className="icon-button"
+                type="button"
+                aria-label="닫기"
+                title="닫기"
+                onClick={() => void closeNoteModal()}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+          </div>
+
+          <Label className="field">
+            <span>제목</span>
+            <Input value={noteTitleDraft} onChange={(event) => setNoteTitleDraft(event.target.value)} placeholder="제목 없음" />
+          </Label>
+
+          <div className="field">
+            <span>내용</span>
+            <RichTextEditor
+              key={selectedNoteId ?? "new-note"}
+              variant="compact"
+              value={noteContentDraft}
+              onChange={(html, text) => {
+                setNoteContentDraft(html);
+                setNoteContentTextDraft(text);
+              }}
+            />
+          </div>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={selectedProjectStatus !== null} onOpenChange={(open) => !open && setSelectedProjectStatusId(null)}>

@@ -5,7 +5,7 @@ export const defaultDashboardGridLayout = { cols: 2, rows: 2 };
 export const dashboardGridSizes = [1, 2, 3, 4, 5];
 export const dashboardGridMaxSize = 12;
 export const dashboardWidgetMaxRows = 5;
-export const dashboardWidgetIds = ["review-prs", "todo", "projects"] as const;
+export const dashboardWidgetIds = ["review-prs", "todo", "projects", "inbox"] as const;
 
 export type DashboardWidgetId = (typeof dashboardWidgetIds)[number];
 
@@ -26,6 +26,7 @@ export const defaultDashboardWidgetLayout: DashboardWidgetLayout[] = [
   { id: "review-prs", x: 0, y: 0, w: 1, h: 1 },
   { id: "todo", x: 1, y: 0, w: 1, h: 1 },
   { id: "projects", x: 0, y: 1, w: 1, h: 1 },
+  { id: "inbox", x: 1, y: 1, w: 1, h: 1 },
 ];
 
 type GridLayoutItem = {

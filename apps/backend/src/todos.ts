@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import { and, asc, eq } from "drizzle-orm";
 
 import { getDb } from "./db.js";
-import { todoComments, todoMemos } from "./schema.js";
+import { projects, todoComments, todoMemos } from "./schema.js";
 
 const SSE_HEARTBEAT_MS = 25_000;
 const DEFAULT_TODO_COLOR = "#1c69d4";
@@ -19,6 +19,7 @@ export type TodoComment = {
 
 export type TodoMemo = {
   id: number;
+  projectId: number;
   title: string;
   content: string;
   color: string;
@@ -30,6 +31,7 @@ export type TodoMemo = {
 };
 
 type TodoUpdateInput = {
+  projectId?: unknown;
   title?: unknown;
   content?: unknown;
   color?: unknown;
@@ -83,6 +85,20 @@ export function readTodoColor(value: unknown): string {
   return value.toLowerCase();
 }
 
+export function readTodoProjectId(value: unknown): number {
+  if (value === null || value === undefined || value === "") {
+    throw new Error("projectId is required");
+  }
+
+  const projectId = Number(value);
+
+  if (!Number.isInteger(projectId) || projectId <= 0) {
+    throw new Error("projectId must be a positive integer");
+  }
+
+  return projectId;
+}
+
 export async function listTodoMemos(): Promise<TodoMemo[]> {
   const db = getDb();
   const memoRows = await db.select().from(todoMemos).orderBy(asc(todoMemos.dueDate));
@@ -91,7 +107,8 @@ export async function listTodoMemos(): Promise<TodoMemo[]> {
   return sortTodoMemos(memoRows.map((memo) => mapTodoMemo(memo, commentRows)));
 }
 
-export async function createTodoMemo(input: { title: unknown; content: unknown; color?: unknown; dueDate: unknown }): Promise<TodoMemo> {
+export async function createTodoMemo(input: { projectId: unknown; title: unknown; content: unknown; color?: unknown; dueDate: unknown }): Promise<TodoMemo> {
+  const projectId = await readActiveProjectId(input.projectId);
   const title = readRequiredString(input.title, "title");
   const content = readRequiredString(input.content, "content");
   const color = readTodoColor(input.color);
@@ -100,6 +117,7 @@ export async function createTodoMemo(input: { title: unknown; content: unknown; 
   const [row] = await getDb()
     .insert(todoMemos)
     .values({
+      projectId,
       title,
       content,
       color,
@@ -119,6 +137,10 @@ export async function createTodoMemo(input: { title: unknown; content: unknown; 
 
 export async function updateTodoMemo(id: number, input: TodoUpdateInput): Promise<TodoMemo | undefined> {
   const values: Partial<typeof todoMemos.$inferInsert> = { updatedAt: new Date() };
+
+  if (input.projectId !== undefined) {
+    values.projectId = await readActiveProjectId(input.projectId);
+  }
 
   if (input.title !== undefined) {
     values.title = readRequiredString(input.title, "title");
@@ -266,6 +288,7 @@ async function getComments(): Promise<TodoCommentRow[]> {
 function mapTodoMemo(row: TodoRow, comments: TodoCommentRow[]): TodoMemo {
   return {
     id: row.id,
+    projectId: row.projectId,
     title: row.title,
     content: row.content,
     color: row.color,
@@ -284,6 +307,20 @@ function mapTodoComment(row: TodoCommentRow): TodoComment {
     body: row.body,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+async function readActiveProjectId(value: unknown): Promise<number> {
+  const projectId = readTodoProjectId(value);
+  const [project] = await getDb()
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.isActive, true)));
+
+  if (!project) {
+    throw new Error("projectId must be an active project");
+  }
+
+  return projectId;
 }
 
 function readRequiredString(value: unknown, field: string): string {

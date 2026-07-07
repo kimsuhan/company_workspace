@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   deleteTodoCommentFromMemo,
+  readTodoProjectId,
   readTodoColor,
   sortTodoMemos,
   toggleCompletedAt,
@@ -13,6 +14,13 @@ test("readTodoColor accepts hex colors and defaults empty values", () => {
   assert.equal(readTodoColor("#e22718"), "#e22718");
   assert.equal(readTodoColor(undefined), "#1c69d4");
   assert.throws(() => readTodoColor("red"), /color must be #RRGGBB/);
+});
+
+test("readTodoProjectId requires a positive project id", () => {
+  assert.equal(readTodoProjectId(3), 3);
+  assert.equal(readTodoProjectId("4"), 4);
+  assert.throws(() => readTodoProjectId(undefined), /projectId is required/);
+  assert.throws(() => readTodoProjectId(0), /projectId must be a positive integer/);
 });
 
 test("sortTodoMemos keeps open urgent todos first and completed todos below", () => {
@@ -49,6 +57,7 @@ test("deleteTodoCommentFromMemo removes only the target comment", () => {
 function memo(overrides: Partial<TodoMemo> = {}): TodoMemo {
   return {
     id: 1,
+    projectId: 1,
     title: "메모",
     content: "내용",
     color: "#1c69d4",

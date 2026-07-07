@@ -866,6 +866,82 @@ body {
   text-align: left;
 }
 
+.todo-project-group {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #262626;
+  padding-top: 12px;
+}
+
+.todo-project-group:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.todo-project-heading {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.todo-project-logo {
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #3c3c3c;
+  background: #1a1a1a;
+  color: #e6e6e6;
+  padding: 4px;
+}
+
+.todo-project-logo.image {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.todo-project-logo.image img {
+  max-width: 20px;
+  max-height: 20px;
+  object-fit: contain;
+}
+
+.todo-project-logo.image.black-logo {
+  background: #fff;
+  padding: 3px;
+}
+
+.todo-project-logo.image.white-logo {
+  background: transparent;
+}
+
+.todo-project-group h3 {
+  margin: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.todo-project-items {
+  display: grid;
+  gap: 8px;
+  padding-left: 10px;
+}
+
+.todo-project-items .todo-item {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .project-dashboard-item {
   grid-template-columns: 42px minmax(0, 1fr) auto;
 }
@@ -1355,6 +1431,7 @@ body {
 
 .field input,
 .field textarea,
+.field select,
 .comment-input input {
   width: 100%;
   border: 1px solid #3a3a3a;
@@ -1374,6 +1451,7 @@ body {
 }
 
 .field input,
+.field select,
 .comment-input input {
   min-height: 44px;
   padding: 0 12px;
@@ -1576,6 +1654,7 @@ body {
 
 .field input:focus,
 .field textarea:focus,
+.field select:focus,
 .comment-input input:focus {
   border-color: #e6e6e6;
 }
@@ -1821,7 +1900,8 @@ body {
   white-space: nowrap;
 }
 
-.project-workspace {
+.project-workspace,
+.notes-workspace {
   position: relative;
   height: calc(100vh - 64px);
   display: grid;
@@ -1830,7 +1910,8 @@ body {
   background: #000;
 }
 
-.project-tree-pane {
+.project-tree-pane,
+.notes-sidebar {
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -1839,6 +1920,10 @@ body {
   border-right: 1px solid #262626;
   background: #0d0d0d;
   padding: 24px;
+}
+
+.notes-sidebar {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .project-pane-header,
@@ -1933,7 +2018,8 @@ body {
   height: 1px;
 }
 
-.project-editor-pane {
+.project-editor-pane,
+.note-editor-pane {
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -1941,6 +2027,134 @@ body {
   gap: 18px;
   padding: 24px;
   overflow: hidden;
+}
+
+.note-filter-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.note-filter-tabs button {
+  min-height: 32px;
+  border: 1px solid #3c3c3c;
+  background: #1a1a1a;
+  color: #bbb;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 12px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.note-filter-tabs button.active,
+.note-filter-tabs button:hover {
+  border-color: #e6e6e6;
+  color: #fff;
+}
+
+.note-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+}
+
+.note-list-item {
+  min-width: 0;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #bbb;
+  font: inherit;
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-list-item:hover,
+.note-list-item.selected {
+  border-color: #3c3c3c;
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.note-list-item span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.note-list-item strong,
+.note-list-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-list-item strong {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.note-list-item small {
+  color: #7e7e7e;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.inbox-note-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+}
+
+.inbox-note-item {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-top: 1px solid #262626;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 0 0;
+  text-align: left;
+  text-decoration: none;
+}
+
+.inbox-note-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.inbox-note-item span {
+  overflow: hidden;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-note-item svg {
+  color: #f4b400;
 }
 
 .project-editor-header {

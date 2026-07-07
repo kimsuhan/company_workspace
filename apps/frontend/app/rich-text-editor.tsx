@@ -12,10 +12,10 @@ import StarterKit from "@tiptap/starter-kit";
 import type { ChangeEvent } from "react";
 import { useEffect, useRef } from "react";
 
-type TodoContentEditorProps = {
+type RichTextEditorProps = {
   value: string;
   onChange: (html: string, text: string) => void;
-  mode?: "basic" | "project";
+  variant?: "compact" | "document";
 };
 
 type UploadedFile = {
@@ -24,14 +24,14 @@ type UploadedFile = {
   publicUrl: string;
 };
 
-export function TodoContentEditor({ value, onChange, mode = "basic" }: TodoContentEditorProps) {
+export function RichTextEditor({ value, onChange, variant = "document" }: RichTextEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
-  const isProjectMode = mode === "project";
+  const isDocumentVariant = variant === "document";
   const editor = useEditor({
     extensions: [
       StarterKit,
-      ...(isProjectMode
+      ...(isDocumentVariant
         ? [
             Table.configure({ resizable: false }),
             TableRow,
@@ -143,7 +143,7 @@ export function TodoContentEditor({ value, onChange, mode = "basic" }: TodoConte
   return (
     <div className="tiptap-editor">
       <div className="tiptap-toolbar" aria-label="편집 도구">
-        {isProjectMode ? (
+        {isDocumentVariant ? (
           <>
             <button
               className={editor?.isActive("heading", { level: 2 }) ? "active" : ""}
@@ -187,7 +187,7 @@ export function TodoContentEditor({ value, onChange, mode = "basic" }: TodoConte
         >
           I
         </button>
-        {isProjectMode ? (
+        {isDocumentVariant ? (
           <>
             <button
               className={editor?.isActive("strike") ? "active" : ""}
@@ -231,7 +231,7 @@ export function TodoContentEditor({ value, onChange, mode = "basic" }: TodoConte
         >
           1.
         </button>
-        {isProjectMode ? (
+        {isDocumentVariant ? (
           <>
             <button
               className={editor?.isActive("taskList") ? "active" : ""}
@@ -364,7 +364,7 @@ export function TodoContentEditor({ value, onChange, mode = "basic" }: TodoConte
         >
           Redo
         </button>
-        {isProjectMode ? (
+        {isDocumentVariant ? (
           <>
             <input ref={imageInputRef} hidden type="file" accept="image/*" onChange={(event) => void insertImage(event)} />
             <input ref={attachmentInputRef} hidden type="file" onChange={(event) => void insertAttachment(event)} />

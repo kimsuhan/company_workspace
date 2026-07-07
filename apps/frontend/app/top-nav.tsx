@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 const topNavItems = [
   { href: "/", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
+  { href: "/notes", label: "Note" },
   { href: "/settings", label: "Settings" },
 ];
 

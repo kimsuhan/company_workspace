@@ -28,26 +28,6 @@ export const githubReviewPullRequests = pgTable("github_review_pull_requests", {
   githubUpdatedAt: timestamp("github_updated_at", { withTimezone: true }).notNull(),
 });
 
-export const todoMemos = pgTable("todo_memos", {
-  id: serial("id").primaryKey(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  color: text("color").notNull().default("#1c69d4"),
-  dueDate: date("due_date"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-});
-
-export const todoComments = pgTable("todo_comments", {
-  id: serial("id").primaryKey(),
-  todoMemoId: integer("todo_memo_id")
-    .notNull()
-    .references(() => todoMemos.id, { onDelete: "cascade" }),
-  body: text("body").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
 export const files = pgTable("files", {
   id: serial("id").primaryKey(),
   originalName: text("original_name").notNull(),
@@ -72,6 +52,48 @@ export const projects = pgTable("projects", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const todoMemos = pgTable("todo_memos", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  color: text("color").notNull().default("#1c69d4"),
+  dueDate: date("due_date"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
+export const todoComments = pgTable("todo_comments", {
+  id: serial("id").primaryKey(),
+  todoMemoId: integer("todo_memo_id")
+    .notNull()
+    .references(() => todoMemos.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const notes = pgTable(
+  "notes",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind").notNull(),
+    title: text("title"),
+    content: text("content").notNull(),
+    color: text("color").notNull().default("#f4b400"),
+    noteDate: date("note_date"),
+    isArchived: boolean("is_archived").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("notes_kind_archived_updated_idx").on(table.kind, table.isArchived, table.updatedAt),
+    index("notes_note_date_idx").on(table.noteDate),
+  ],
+);
 
 export const projectHealthRecords = pgTable(
   "project_health_records",

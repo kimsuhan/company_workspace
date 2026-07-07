@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { TodoContentEditor } from "../../todo-content-editor";
+import { RichTextEditor } from "../../rich-text-editor";
 import { TopNav } from "../../top-nav";
 
 type Project = {
@@ -308,9 +308,8 @@ export default function ProjectDetailPage() {
 
               <div className="field project-editor-body">
                 <span>본문</span>
-                <TodoContentEditor
+                <RichTextEditor
                   key={selectedDocument.id}
-                  mode="project"
                   value={contentDraft}
                   onChange={(html) => {
                     setContentDraft(html);

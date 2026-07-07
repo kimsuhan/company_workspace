@@ -5,6 +5,7 @@ import { cors } from "hono/cors";
 import { closeDatabase, getPostgresClient, migrateDatabase } from "./db.js";
 import { registerFileRoutes } from "./files.js";
 import { registerGithubReviewPrRoutes, startGithubReviewPrPolling } from "./github-review-prs.js";
+import { registerNoteRoutes } from "./notes.js";
 import { registerProjectRoutes, startProjectHealthPolling } from "./projects.js";
 import { registerTodoRoutes } from "./todos.js";
 
@@ -40,6 +41,7 @@ app.get("/health/db", async (c) => {
 });
 registerGithubReviewPrRoutes(app);
 registerFileRoutes(app);
+registerNoteRoutes(app);
 registerTodoRoutes(app);
 registerProjectRoutes(app);
 
