@@ -12,6 +12,7 @@ import {
   ChevronRight,
   FolderOpen,
   GripVertical,
+  Plus,
   StickyNote,
   RotateCcw,
   X,
@@ -49,7 +50,9 @@ import {
   toActiveReviewPullRequestIds,
   toHealthSiteStatusMap,
 } from "./dashboard-notifications";
+import { newInboxNoteContent } from "./note-defaults";
 import { TopNav } from "./top-nav";
+import { shouldSubmitTodoComment } from "./todo-comment-shortcuts";
 
 type ReviewPullRequest = {
   githubIssueId: number;
@@ -132,6 +135,12 @@ type TodoContextMenu = {
   todoId: number;
 };
 
+type TodoCommentContextMenu = {
+  x: number;
+  y: number;
+  commentId: number;
+};
+
 type ReviewPrContextMenu = {
   x: number;
   y: number;
@@ -165,7 +174,9 @@ export default function Home() {
   const [isDueDatePickerOpen, setIsDueDatePickerOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [todoCommentDraft, setTodoCommentDraft] = useState("");
+  const [editingTodoCommentId, setEditingTodoCommentId] = useState<number | null>(null);
   const [todoContextMenu, setTodoContextMenu] = useState<TodoContextMenu | null>(null);
+  const [todoCommentContextMenu, setTodoCommentContextMenu] = useState<TodoCommentContextMenu | null>(null);
   const [reviewPrContextMenu, setReviewPrContextMenu] = useState<ReviewPrContextMenu | null>(null);
   const [selectedProjectStatusId, setSelectedProjectStatusId] = useState<number | null>(null);
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenu | null>(null);
@@ -183,6 +194,8 @@ export default function Home() {
 
   const selectedTodo = todoMemos.find((memo) => memo.id === selectedTodoId);
   const todoContextTarget = todoMemos.find((memo) => memo.id === todoContextMenu?.todoId) ?? null;
+  const todoCommentContextTarget =
+    selectedTodo?.comments.find((comment) => comment.id === todoCommentContextMenu?.commentId) ?? null;
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
   const reviewPrContextTarget =
     reviewPullRequests.find((pullRequest) => pullRequest.githubIssueId === reviewPrContextMenu?.githubIssueId) ?? null;
@@ -295,6 +308,7 @@ export default function Home() {
     setTodoDueDateDraft(memo.dueDate ?? "");
     setCalendarMonth(parseDateInput(memo.dueDate ?? "") ?? new Date());
     setTodoCommentDraft("");
+    setEditingTodoCommentId(null);
     setIsTodoModalOpen(true);
   };
 
@@ -316,7 +330,13 @@ export default function Home() {
   const closeTodoModal = async () => {
     await persistTodo();
     setIsTodoModalOpen(false);
-    setSelectedTodoId(null);
+  };
+
+  const cleanupClosedTodoModal = (open: boolean) => {
+    if (!open) {
+      setSelectedTodoId(null);
+      setIsDueDatePickerOpen(false);
+    }
   };
 
   const toggleTodoDone = async (memo: TodoMemo) => {
@@ -334,11 +354,18 @@ export default function Home() {
       return;
     }
 
-    await requestTodo(`/todos/${selectedTodoId}/comments`, {
-      method: "POST",
+    await requestTodo(editingTodoCommentId === null ? `/todos/${selectedTodoId}/comments` : `/todos/${selectedTodoId}/comments/${editingTodoCommentId}`, {
+      method: editingTodoCommentId === null ? "POST" : "PATCH",
       body: JSON.stringify({ body }),
     });
     setTodoCommentDraft("");
+    setEditingTodoCommentId(null);
+  };
+
+  const editTodoComment = (comment: TodoComment) => {
+    setTodoCommentContextMenu(null);
+    setEditingTodoCommentId(comment.id);
+    setTodoCommentDraft(comment.body);
   };
 
   const deleteTodoComment = async (commentId: number) => {
@@ -346,7 +373,13 @@ export default function Home() {
       return;
     }
 
+    setTodoCommentContextMenu(null);
     await requestTodo(`/todos/${selectedTodoId}/comments/${commentId}`, { method: "DELETE" });
+
+    if (editingTodoCommentId === commentId) {
+      setEditingTodoCommentId(null);
+      setTodoCommentDraft("");
+    }
   };
 
   const deleteTodoMemo = async (memo: TodoMemo) => {
@@ -393,7 +426,7 @@ export default function Home() {
     const response = await fetch("/api/notes", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "inbox", title: null, content: "새 메모", color: "#f4b400" }),
+      body: JSON.stringify({ kind: "inbox", title: null, content: newInboxNoteContent, color: "#f4b400" }),
     });
 
     if (!response.ok) {
@@ -427,7 +460,12 @@ export default function Home() {
   const closeNoteModal = async () => {
     await persistNote();
     setIsNoteModalOpen(false);
-    setSelectedNoteId(null);
+  };
+
+  const cleanupClosedNoteModal = (open: boolean) => {
+    if (!open) {
+      setSelectedNoteId(null);
+    }
   };
 
   const deleteNote = async () => {
@@ -838,6 +876,7 @@ export default function Home() {
       onClick={() => {
         setProjectContextMenu(null);
         setTodoContextMenu(null);
+        setTodoCommentContextMenu(null);
         setReviewPrContextMenu(null);
       }}
     >
@@ -878,11 +917,11 @@ export default function Home() {
             </div>
             <div className="dashboard-heading-actions">
               <Button
-                className={isDashboardEditing ? "quick-add-button active" : "quick-add-button"}
+                className={isDashboardEditing ? "dashboard-command-button active" : "dashboard-command-button"}
                 onClick={() => setIsDashboardEditing((value) => !value)}
                 type="button"
               >
-                {isDashboardEditing ? "Done" : "Edit"}
+                {isDashboardEditing ? "완료" : "편집"}
               </Button>
             </div>
           </div>
@@ -973,22 +1012,26 @@ export default function Home() {
                   <h2 id="flow-title">TODOIST</h2>
                 </div>
                 <div className="card-actions">
-                  {projects.length === 0 ? (
-                    <Link className="settings-shortcut-link" href="/settings/projects">
-                      프로젝트 설정
-                      <ArrowUpRight size={18} strokeWidth={1.7} />
-                    </Link>
-                  ) : (
-                    <Button className="quick-add-button" type="button" onClick={openNewTodo}>
-                      추가
+                  {projects.length > 0 ? (
+                    <Button className="dashboard-card-action" type="button" onClick={openNewTodo}>
+                      <Plus size={15} strokeWidth={1.8} />
+                      <span>추가</span>
                     </Button>
-                  )}
+                  ) : null}
                   {getDashboardWidgetEditControls("todo")}
                 </div>
               </div>
               <div className="todo-list">
                 {todoGroups.length === 0 ? (
-                  <p className="card-copy">{todoMemos.length === 0 ? "등록된 메모가 없습니다." : "프로젝트 정보를 불러오는 중입니다."}</p>
+                  <>
+                    <p className="card-copy">{todoMemos.length === 0 ? "등록된 메모가 없습니다." : "프로젝트 정보를 불러오는 중입니다."}</p>
+                    {projects.length === 0 ? (
+                      <Link className="dashboard-card-footer-link" href="/settings/projects">
+                        프로젝트 설정
+                        <ArrowUpRight size={18} strokeWidth={1.7} />
+                      </Link>
+                    ) : null}
+                  </>
                 ) : (
                   todoGroups.map(({ project, memos }) => (
                     <section className="todo-project-group" key={project.id} aria-label={`${project.name} 할일`}>
@@ -1052,10 +1095,6 @@ export default function Home() {
                   <h2 id="projects-title">Info</h2>
                 </div>
                 <div className="card-actions">
-                  <Link className="settings-shortcut-link" href="/settings/projects">
-                    설정 바로가기
-                    <ArrowUpRight size={18} strokeWidth={1.7} />
-                  </Link>
                   {getDashboardWidgetEditControls("projects")}
                 </div>
               </div>
@@ -1097,6 +1136,10 @@ export default function Home() {
                     </article>
                   ))
                 )}
+                <Link className="dashboard-card-footer-link" href="/settings/projects">
+                  설정 바로가기
+                  <ArrowUpRight size={18} strokeWidth={1.7} />
+                </Link>
               </div>
             </section>
 
@@ -1111,13 +1154,10 @@ export default function Home() {
                   <h2 id="inbox-title">Inbox</h2>
                 </div>
                 <div className="card-actions">
-                  <Button className="quick-add-button" type="button" onClick={() => void openNewInboxNote()}>
-                    추가
+                  <Button className="dashboard-card-action" type="button" onClick={() => void openNewInboxNote()}>
+                    <Plus size={15} strokeWidth={1.8} />
+                    <span>추가</span>
                   </Button>
-                  <Link className="settings-shortcut-link" href="/notes">
-                    전체 보기
-                    <ArrowUpRight size={18} strokeWidth={1.7} />
-                  </Link>
                   {getDashboardWidgetEditControls("inbox")}
                 </div>
               </div>
@@ -1132,6 +1172,10 @@ export default function Home() {
                     </button>
                   ))
                 )}
+                <Link className="dashboard-card-footer-link" href="/notes">
+                  전체 보기
+                  <ArrowUpRight size={18} strokeWidth={1.7} />
+                </Link>
               </div>
             </section>
               </GridLayout>
@@ -1173,6 +1217,21 @@ export default function Home() {
         </div>
       ) : null}
 
+      {todoCommentContextMenu && todoCommentContextTarget ? (
+        <div
+          className="tree-context-menu"
+          style={{ left: todoCommentContextMenu.x, top: todoCommentContextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" onClick={() => editTodoComment(todoCommentContextTarget)}>
+            수정
+          </button>
+          <button className="danger" type="button" onClick={() => void deleteTodoComment(todoCommentContextTarget.id)}>
+            삭제
+          </button>
+        </div>
+      ) : null}
+
       {projectContextMenu ? (
         <div
           className="tree-context-menu"
@@ -1200,6 +1259,7 @@ export default function Home() {
       <Dialog
         open={isTodoModalOpen}
         onOpenChange={(open) => (open ? setIsTodoModalOpen(true) : void closeTodoModal())}
+        onOpenChangeComplete={cleanupClosedTodoModal}
       >
         <DialogContent className="todo-modal" showCloseButton={false}>
             <div className="modal-header">
@@ -1377,26 +1437,32 @@ export default function Home() {
                   <Input
                     value={todoCommentDraft}
                     onChange={(event) => setTodoCommentDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (shouldSubmitTodoComment(event)) {
+                        event.preventDefault();
+                        void addTodoComment();
+                      }
+                    }}
                     placeholder="코멘트를 입력하세요"
                   />
                   <Button type="button" onClick={addTodoComment} disabled={!todoCommentDraft.trim()}>
-                    등록
+                    {editingTodoCommentId === null ? "등록" : "수정"}
                   </Button>
                 </div>
                 <div className="comment-list">
                   {selectedTodo.comments.map((comment) => (
-                    <article className="comment-item" key={comment.id}>
+                    <article
+                      className="comment-item"
+                      key={comment.id}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setTodoCommentContextMenu({ x: event.clientX, y: event.clientY, commentId: comment.id });
+                      }}
+                    >
                       <div>
                         <p>{comment.body}</p>
                         <span>{formatDate(comment.createdAt)}</span>
                       </div>
-                      <IconActionButton
-                        action="delete"
-                        compact
-                        type="button"
-                        label="코멘트 삭제"
-                        onClick={() => deleteTodoComment(comment.id)}
-                      />
                     </article>
                   ))}
                 </div>
@@ -1408,6 +1474,7 @@ export default function Home() {
       <Dialog
         open={isNoteModalOpen}
         onOpenChange={(open) => (open ? setIsNoteModalOpen(true) : void closeNoteModal())}
+        onOpenChangeComplete={cleanupClosedNoteModal}
       >
         <DialogContent className="todo-modal" showCloseButton={false}>
           <div className="modal-header">

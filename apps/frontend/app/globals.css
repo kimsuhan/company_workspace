@@ -189,6 +189,32 @@ body {
   justify-content: end;
 }
 
+.dashboard-command-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 10px;
+  color: #7e7e7e;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.dashboard-command-button:hover,
+.dashboard-command-button.active {
+  border-color: #3c3c3c;
+  color: #e6e6e6;
+}
+
 .m-stripe {
   width: 132px;
   height: 4px;
@@ -471,6 +497,33 @@ body {
   gap: 8px;
 }
 
+.dashboard-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 4px;
+  color: #7e7e7e;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dashboard-card-action:hover {
+  color: #e6e6e6;
+}
+
+.dashboard-card-action svg {
+  color: currentColor;
+}
+
 .dashboard-widget-edit-controls {
   display: flex;
   flex-wrap: wrap;
@@ -497,11 +550,16 @@ body {
   color: #fff;
 }
 
-.settings-shortcut-link {
-  display: inline-flex;
+.dashboard-card-footer-link {
+  display: flex;
   align-items: center;
-  gap: 2px;
-  margin-top: 25px;
+  justify-self: stretch;
+  align-self: start;
+  gap: 3px;
+  margin-top: 8px;
+  border-top: 1px solid #262626;
+  padding-top: 12px;
+  width: 100%;
   color: #7e7e7e;
   font-size: 12px;
   font-weight: 400;
@@ -511,16 +569,12 @@ body {
   white-space: nowrap;
 }
 
-.settings-shortcut-link:hover {
+.dashboard-card-footer-link:hover {
   color: #e6e6e6;
 }
 
-.settings-shortcut-link svg {
+.dashboard-card-footer-link svg {
   color: currentColor;
-}
-
-.card-actions .settings-shortcut-link {
-  margin-top: 0;
 }
 
 .metric {
@@ -555,7 +609,6 @@ body {
 .secondary-button,
 .danger-button,
 .todo-row-actions button,
-.comment-item button,
 .comment-input button,
 .icon-button {
   border: 1px solid #3c3c3c;
@@ -570,8 +623,18 @@ body {
 }
 
 .quick-add-button {
-  min-height: 32px;
-  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  min-height: 28px;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 4px;
+  color: #7e7e7e;
+  letter-spacing: 0.5px;
+  text-transform: none;
 }
 
 .quick-add-button:hover,
@@ -579,10 +642,19 @@ body {
 .secondary-button:hover,
 .danger-button:hover,
 .todo-row-actions button:hover,
-.comment-item button:hover,
 .comment-input button:hover,
 .icon-button:hover {
   border-color: #e6e6e6;
+}
+
+.quick-add-button:hover {
+  border-color: transparent;
+  color: #e6e6e6;
+}
+
+.quick-add-button svg,
+.endpoint-add-button svg {
+  color: currentColor;
 }
 
 .primary-button {
@@ -1385,23 +1457,27 @@ body {
 }
 
 .endpoint-add-button {
-  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  min-height: 28px;
   border: 1px solid transparent;
+  border-radius: 0;
   background: transparent;
-  color: #bbb;
+  color: #7e7e7e;
   font: inherit;
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 1.5px;
+  letter-spacing: 0.5px;
   line-height: 1;
-  padding: 0 12px;
-  text-transform: uppercase;
+  padding: 0 4px;
   cursor: pointer;
 }
 
 .endpoint-add-button:hover {
-  border-color: #3c3c3c;
-  color: #fff;
+  border-color: transparent;
+  color: #e6e6e6;
 }
 
 .endpoint-add-button:focus-visible {
@@ -1835,11 +1911,10 @@ body {
 
 .comment-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
   border-top: 1px solid #3a3a3a;
   padding-top: 10px;
+  cursor: context-menu;
 }
 
 .comment-item p {
@@ -1852,12 +1927,6 @@ body {
 .comment-item span {
   color: #9a9a9a;
   font-size: 12px;
-}
-
-.comment-item button {
-  min-height: 30px;
-  padding: 0 10px;
-  cursor: pointer;
 }
 
 .projects-layout {

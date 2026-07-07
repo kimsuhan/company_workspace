@@ -17,9 +17,19 @@
 - `POST /api/files`: `multipart/form-data`의 `file` 필드를 업로드한다.
 - `GET /api/files/:id`: active 파일을 inline 응답한다.
 - `GET /api/files/:id/download`: active 파일을 attachment 응답한다.
-- `DELETE /api/files/:id`: soft delete 한다.
+- `DELETE /api/files/:id`: active row를 비활성화하고 로컬 파일 본문을 삭제한다.
 
 기본 제한은 10MB다. v1은 권한/인증, 파일 관리 화면, 이미지 리사이즈를 다루지 않는다.
+
+## 정리 정책
+
+서버는 시작 시 1회, 이후 매일 03:17에 고아 파일을 정리한다.
+
+- 정리 대상: `is_active=true`이고 생성 후 1시간이 지난 파일 중 어디에도 참조되지 않는 파일
+- 보호 참조: active Project의 `logo_file_id`, active Project에 속한 Todo/Project 문서 본문, Note 본문 안의 `/api/files/:id` 또는 `/api/files/:id/download`
+- 정리 동작: 로컬 파일 본문을 삭제하고 `files.is_active=false`로 변경한다.
+
+최근 1시간 파일은 에디터 작성 중이거나 저장 전일 수 있어 정리하지 않는다.
 
 ## 사용처
 

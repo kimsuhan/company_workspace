@@ -99,6 +99,10 @@ export function readTodoProjectId(value: unknown): number {
   return projectId;
 }
 
+export function readTodoCommentBody(value: unknown): string {
+  return readRequiredString(value, "body");
+}
+
 export async function listTodoMemos(): Promise<TodoMemo[]> {
   const db = getDb();
   const memoRows = await db.select().from(todoMemos).orderBy(asc(todoMemos.dueDate));
@@ -173,11 +177,27 @@ export async function updateTodoMemo(id: number, input: TodoUpdateInput): Promis
 }
 
 export async function createTodoComment(id: number, input: { body: unknown }): Promise<TodoComment> {
-  const body = readRequiredString(input.body, "body");
+  const body = readTodoCommentBody(input.body);
   const [row] = await getDb()
     .insert(todoComments)
     .values({ todoMemoId: id, body })
     .returning();
+
+  await broadcastTodoMemos();
+  return mapTodoComment(row);
+}
+
+export async function updateTodoComment(todoId: number, commentId: number, input: { body: unknown }): Promise<TodoComment | undefined> {
+  const body = readTodoCommentBody(input.body);
+  const [row] = await getDb()
+    .update(todoComments)
+    .set({ body })
+    .where(and(eq(todoComments.todoMemoId, todoId), eq(todoComments.id, commentId)))
+    .returning();
+
+  if (!row) {
+    return undefined;
+  }
 
   await broadcastTodoMemos();
   return mapTodoComment(row);
@@ -255,6 +275,14 @@ export function registerTodoRoutes(app: Hono): void {
   app.post("/todos/:id/comments", async (c) => {
     try {
       return c.json(await createTodoComment(readId(c.req.param("id")), await c.req.json()), 201);
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 400);
+    }
+  });
+  app.patch("/todos/:id/comments/:commentId", async (c) => {
+    try {
+      const comment = await updateTodoComment(readId(c.req.param("id")), readId(c.req.param("commentId")), await c.req.json());
+      return comment ? c.json(comment) : c.json({ error: "Comment not found" }, 404);
     } catch (error) {
       return c.json({ error: getErrorMessage(error) }, 400);
     }

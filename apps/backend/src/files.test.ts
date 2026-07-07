@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildStoredFileName, readUploadedFileInput } from "./files.js";
+import { buildStoredFileName, extractFileIdsFromContent, findOrphanFileIds, readUploadedFileInput } from "./files.js";
 
 test("readUploadedFileInput validates required file metadata", () => {
   assert.deepEqual(readUploadedFileInput({ name: " logo.png ", type: "image/png", size: 1024 }), {
@@ -18,4 +18,15 @@ test("buildStoredFileName keeps extension and removes unsafe name characters", (
   const name = buildStoredFileName("01", "내 로고.final.png");
 
   assert.equal(name, "01-final.png");
+});
+
+test("extractFileIdsFromContent reads inline and download file URLs", () => {
+  assert.deepEqual(
+    extractFileIdsFromContent('<img src="/api/files/12"><a href="/api/files/34/download">file</a><img src="/api/files/pending">'),
+    new Set([12, 34]),
+  );
+});
+
+test("findOrphanFileIds returns active files without references", () => {
+  assert.deepEqual(findOrphanFileIds([1, 2, 3], new Set([2])), [1, 3]);
 });

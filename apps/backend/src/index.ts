@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 import { closeDatabase, getPostgresClient, migrateDatabase } from "./db.js";
-import { registerFileRoutes } from "./files.js";
+import { registerFileRoutes, startFileCleanup } from "./files.js";
 import { registerGithubReviewPrRoutes, startGithubReviewPrPolling } from "./github-review-prs.js";
 import { registerNoteRoutes } from "./notes.js";
 import { registerProjectRoutes, startProjectHealthPolling } from "./projects.js";
@@ -51,6 +51,7 @@ await migrateDatabase();
 
 const stopGithubReviewPrPolling = startGithubReviewPrPolling();
 const stopProjectHealthPolling = startProjectHealthPolling();
+const stopFileCleanup = startFileCleanup();
 
 serve({
   fetch: app.fetch,
@@ -63,6 +64,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
     stopGithubReviewPrPolling();
     stopProjectHealthPolling();
+    stopFileCleanup();
     await closeDatabase();
     process.exit(0);
   });

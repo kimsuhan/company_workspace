@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   deleteTodoCommentFromMemo,
+  readTodoCommentBody,
   readTodoProjectId,
   readTodoColor,
   sortTodoMemos,
@@ -21,6 +22,11 @@ test("readTodoProjectId requires a positive project id", () => {
   assert.equal(readTodoProjectId("4"), 4);
   assert.throws(() => readTodoProjectId(undefined), /projectId is required/);
   assert.throws(() => readTodoProjectId(0), /projectId must be a positive integer/);
+});
+
+test("readTodoCommentBody requires non-empty body", () => {
+  assert.equal(readTodoCommentBody("  수정 댓글  "), "수정 댓글");
+  assert.throws(() => readTodoCommentBody(""), /body is required/);
 });
 
 test("sortTodoMemos keeps open urgent todos first and completed todos below", () => {

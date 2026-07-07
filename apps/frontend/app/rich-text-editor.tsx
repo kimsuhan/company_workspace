@@ -24,6 +24,10 @@ type UploadedFile = {
   publicUrl: string;
 };
 
+export function findFirstClipboardImage(files: Iterable<File>): File | null {
+  return Array.from(files).find((file) => file.type.startsWith("image/")) ?? null;
+}
+
 export function RichTextEditor({ value, onChange, variant = "document" }: RichTextEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
@@ -31,15 +35,15 @@ export function RichTextEditor({ value, onChange, variant = "document" }: RichTe
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Image,
+      TaskList,
+      TaskItem.configure({ nested: true }),
       ...(isDocumentVariant
         ? [
             Table.configure({ resizable: false }),
             TableRow,
             TableHeader,
             TableCell,
-            Image,
-            TaskList,
-            TaskItem.configure({ nested: true }),
           ]
         : []),
     ],
@@ -57,6 +61,19 @@ export function RichTextEditor({ value, onChange, variant = "document" }: RichTe
         }
 
         editor?.chain().focus().sinkListItem("listItem").run();
+        return true;
+      },
+      handlePaste(_view, event) {
+        const file = findFirstClipboardImage(event.clipboardData?.files ?? []);
+
+        if (!file) {
+          return false;
+        }
+
+        event.preventDefault();
+        void uploadEditorFile(file).then((uploaded) => {
+          editor?.chain().focus().setImage({ src: uploaded.publicUrl, alt: uploaded.originalName }).run();
+        });
         return true;
       },
     },
@@ -187,18 +204,18 @@ export function RichTextEditor({ value, onChange, variant = "document" }: RichTe
         >
           I
         </button>
+        <button
+          className={editor?.isActive("strike") ? "active" : ""}
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            editor?.chain().focus().toggleStrike().run();
+          }}
+        >
+          Strike
+        </button>
         {isDocumentVariant ? (
           <>
-            <button
-              className={editor?.isActive("strike") ? "active" : ""}
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                editor?.chain().focus().toggleStrike().run();
-              }}
-            >
-              Strike
-            </button>
             <button
               className={editor?.isActive("code") ? "active" : ""}
               type="button"
@@ -231,18 +248,18 @@ export function RichTextEditor({ value, onChange, variant = "document" }: RichTe
         >
           1.
         </button>
+        <button
+          className={editor?.isActive("taskList") ? "active" : ""}
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            editor?.chain().focus().toggleTaskList().run();
+          }}
+        >
+          Tasks
+        </button>
         {isDocumentVariant ? (
           <>
-            <button
-              className={editor?.isActive("taskList") ? "active" : ""}
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                editor?.chain().focus().toggleTaskList().run();
-              }}
-            >
-              Tasks
-            </button>
             <button
               className={editor?.isActive("blockquote") ? "active" : ""}
               type="button"
@@ -330,15 +347,6 @@ export function RichTextEditor({ value, onChange, variant = "document" }: RichTe
               type="button"
               onMouseDown={(event) => {
                 event.preventDefault();
-                imageInputRef.current?.click();
-              }}
-            >
-              Image
-            </button>
-            <button
-              type="button"
-              onMouseDown={(event) => {
-                event.preventDefault();
                 attachmentInputRef.current?.click();
               }}
             >
@@ -346,6 +354,15 @@ export function RichTextEditor({ value, onChange, variant = "document" }: RichTe
             </button>
           </>
         ) : null}
+        <button
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            imageInputRef.current?.click();
+          }}
+        >
+          Image
+        </button>
         <button
           type="button"
           onMouseDown={(event) => {
@@ -364,9 +381,9 @@ export function RichTextEditor({ value, onChange, variant = "document" }: RichTe
         >
           Redo
         </button>
+        <input ref={imageInputRef} hidden type="file" accept="image/*" onChange={(event) => void insertImage(event)} />
         {isDocumentVariant ? (
           <>
-            <input ref={imageInputRef} hidden type="file" accept="image/*" onChange={(event) => void insertImage(event)} />
             <input ref={attachmentInputRef} hidden type="file" onChange={(event) => void insertAttachment(event)} />
           </>
         ) : null}

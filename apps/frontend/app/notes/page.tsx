@@ -1,11 +1,12 @@
 "use client";
 
-import { FileText, Inbox, StickyNote, Trash2 } from "lucide-react";
+import { FileText, Inbox, Plus, StickyNote, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+import { newInboxNoteContent } from "../note-defaults";
 import { RichTextEditor } from "../rich-text-editor";
 import { TopNav } from "../top-nav";
 
@@ -127,7 +128,7 @@ export default function NotesPage() {
     try {
       const note = await requestNote<Note>("/api/notes", {
         method: "POST",
-        body: JSON.stringify({ kind: "inbox", title: null, content: "새 메모", color: "#f4b400" }),
+        body: JSON.stringify({ kind: "inbox", title: null, content: newInboxNoteContent, color: "#f4b400" }),
       });
       setSelectedNoteId(note.id);
       setFilter("inbox");
@@ -161,7 +162,8 @@ export default function NotesPage() {
               <h1 id="notes-title">Inbox</h1>
             </div>
             <Button className="quick-add-button" type="button" onClick={createInboxNote}>
-              추가
+              <Plus size={15} strokeWidth={1.8} />
+              <span>추가</span>
             </Button>
           </div>
 

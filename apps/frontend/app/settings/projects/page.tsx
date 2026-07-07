@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, Plus } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
 
@@ -274,7 +274,12 @@ export default function SettingsProjectsPage() {
 
   const closeProjectForm = () => {
     setIsProjectFormOpen(false);
-    resetForm();
+  };
+
+  const cleanupClosedProjectForm = (open: boolean) => {
+    if (!open) {
+      resetForm();
+    }
   };
 
   return (
@@ -286,7 +291,8 @@ export default function SettingsProjectsPage() {
             <h2 id="project-list-title">Projects</h2>
           </div>
           <Button className="endpoint-add-button" type="button" onClick={openNewProject}>
-            Add
+            <Plus size={15} strokeWidth={1.8} />
+            <span>추가</span>
           </Button>
         </div>
 
@@ -355,7 +361,11 @@ export default function SettingsProjectsPage() {
         </div>
       ) : null}
 
-      <Dialog open={isProjectFormOpen} onOpenChange={(open) => (open ? setIsProjectFormOpen(true) : closeProjectForm())}>
+      <Dialog
+        open={isProjectFormOpen}
+        onOpenChange={(open) => (open ? setIsProjectFormOpen(true) : closeProjectForm())}
+        onOpenChangeComplete={cleanupClosedProjectForm}
+      >
         <DialogContent className="settings-modal" showCloseButton={false}>
           <div className="modal-header">
             <div>

@@ -451,6 +451,9 @@ Hero photography fills full-width with no rounding. Photo cards inside grids ret
 - Settings controls must look like controls, not loose text: group custom inputs in a bordered panel, show compact labels, visible input borders, and focus states.
 - Dashboard edit surfaces may use subtle dotted grid guides only in edit mode.
 - Dashboard widget cards keep sharp, low-radius BMW M style borders and avoid nested decorative cards.
+- Creation actions stay in the card or panel header's right edge as a low-weight `+ label` text action.
+- Navigation links such as view-all or settings shortcuts do not share the creation-action row; place them at the end of the card body or in a footer row.
+- Small workspace actions use `{rounded.none}`, transparent backgrounds, muted text, and hover brightness only; avoid pill-shaped buttons.
 
 ## Do's and Don'ts
 
