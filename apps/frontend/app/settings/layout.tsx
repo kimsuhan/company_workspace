@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -32,9 +33,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
               const isActive = item.href === "/settings" ? pathname === item.href : pathname.startsWith(item.href);
 
               return (
-                <a aria-current={isActive ? "page" : undefined} href={item.href} key={item.href}>
+                <Link aria-current={isActive ? "page" : undefined} href={item.href} key={item.href}>
                   {item.label}
-                </a>
+                </Link>
               );
             })}
           </aside>

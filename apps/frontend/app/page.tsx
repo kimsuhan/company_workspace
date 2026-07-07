@@ -3,6 +3,7 @@
 import { Popover } from "@base-ui/react/popover";
 import Chart from "chart.js/auto";
 import type { Chart as ChartInstance, TooltipItem } from "chart.js";
+import Link from "next/link";
 import {
   ArrowUpRight,
   Calendar,
@@ -149,6 +150,7 @@ export default function Home() {
   const [dashboardGridLayoutSetting, setDashboardGridLayoutSetting] = useState<DashboardGridLayout>(defaultDashboardGridLayout);
   const [dashboardWidgetLayout, setDashboardWidgetLayout] = useState<DashboardWidgetLayout[]>(defaultDashboardWidgetLayout);
   const [isDashboardEditing, setIsDashboardEditing] = useState(false);
+  const [isDashboardLayoutReady, setIsDashboardLayoutReady] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const { containerRef: dashboardGridRef, mounted: isDashboardGridMeasured, width: dashboardGridWidth } = useContainerWidth();
   const healthChartRef = useRef<HTMLCanvasElement | null>(null);
@@ -170,6 +172,7 @@ export default function Home() {
   const liveServiceCount = [isReviewPrsLive, isTodoLive, isProjectsLive].filter(Boolean).length;
   const liveSummaryLabel = liveServiceCount === 3 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
   const effectiveDashboardGridSize = isDashboardGridMeasured && dashboardGridWidth < 860 ? 1 : dashboardGridLayoutSetting.cols;
+  const isDashboardGridReady = isDashboardLayoutReady && isDashboardGridMeasured && dashboardGridWidth > 0;
   const dashboardGridRowHeight = effectiveDashboardGridSize === 1 ? 260 : 220;
   const dashboardGridEditMinHeight =
     dashboardGridLayoutSetting.rows * dashboardGridRowHeight + Math.max(0, dashboardGridLayoutSetting.rows - 1) * 16;
@@ -552,6 +555,8 @@ export default function Home() {
     if (savedWidgetLayout !== serializeDashboardWidgetLayout(parsedWidgetLayout)) {
       window.localStorage.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(parsedWidgetLayout));
     }
+
+    setIsDashboardLayoutReady(true);
   }, []);
 
   useEffect(() => {
@@ -741,30 +746,31 @@ export default function Home() {
           </div>
 
           <div className="dashboard-grid-shell" ref={dashboardGridRef}>
-            <GridLayout
-              autoSize
-              className={isDashboardEditing ? "dashboard-grid editing" : "dashboard-grid"}
-              dragConfig={{
-                enabled: isDashboardEditing,
-                handle: ".dashboard-drag-handle",
-                cancel: ".dashboard-grid-no-drag",
-                threshold: 6,
-              }}
-              gridConfig={{
-                cols: effectiveDashboardGridSize,
-                rowHeight: dashboardGridRowHeight,
-                margin: [16, 16],
-                containerPadding: [0, 0],
-                maxRows: Infinity,
-              }}
-              layout={dashboardGridLayout}
-              onDragStop={updateDashboardLayoutAfterItemChange}
-              onResizeStop={updateDashboardLayoutAfterItemChange}
-              positionStrategy={absoluteStrategy}
-              resizeConfig={{ enabled: isDashboardEditing, handles: ["se"] }}
-              style={isDashboardEditing ? { minHeight: dashboardGridEditMinHeight } : undefined}
-              width={dashboardGridWidth}
-            >
+            {isDashboardGridReady ? (
+              <GridLayout
+                autoSize
+                className={isDashboardEditing ? "dashboard-grid editing" : "dashboard-grid"}
+                dragConfig={{
+                  enabled: isDashboardEditing,
+                  handle: ".dashboard-drag-handle",
+                  cancel: ".dashboard-grid-no-drag",
+                  threshold: 6,
+                }}
+                gridConfig={{
+                  cols: effectiveDashboardGridSize,
+                  rowHeight: dashboardGridRowHeight,
+                  margin: [16, 16],
+                  containerPadding: [0, 0],
+                  maxRows: Infinity,
+                }}
+                layout={dashboardGridLayout}
+                onDragStop={updateDashboardLayoutAfterItemChange}
+                onResizeStop={updateDashboardLayoutAfterItemChange}
+                positionStrategy={absoluteStrategy}
+                resizeConfig={{ enabled: isDashboardEditing, handles: ["se"] }}
+                style={isDashboardEditing ? { minHeight: dashboardGridEditMinHeight } : undefined}
+                width={dashboardGridWidth}
+              >
             <section
               className="dashboard-card pr-card"
               id="github"
@@ -882,10 +888,10 @@ export default function Home() {
                   <h2 id="projects-title">Projects</h2>
                 </div>
                 <div className="card-actions">
-                  <a className="settings-shortcut-link" href="/settings/projects">
+                  <Link className="settings-shortcut-link" href="/settings/projects">
                     설정 바로가기
                     <ArrowUpRight size={18} strokeWidth={1.7} />
-                  </a>
+                  </Link>
                   {getDashboardWidgetEditControls("projects")}
                 </div>
               </div>
@@ -910,10 +916,10 @@ export default function Home() {
                       >
                         {project.logoUrl ? <img src={project.logoUrl} alt="" /> : <FolderOpen size={18} />}
                       </span>
-                      <a className="project-list-main" href={`/projects/${project.id}`}>
+                      <Link className="project-list-main" href={`/projects/${project.id}`}>
                         <strong>{project.name}</strong>
                         <small>{project.healthApiUrl || project.description || `작성 ${formatDate(project.createdAt)}`}</small>
-                      </a>
+                      </Link>
                       <div className="health-site-meta">
                         {project.health ? (
                           <>
@@ -929,7 +935,8 @@ export default function Home() {
                 )}
               </div>
             </section>
-            </GridLayout>
+              </GridLayout>
+            ) : null}
           </div>
       </section>
 

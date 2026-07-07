@@ -1,6 +1,7 @@
 "use client";
 
 import { FolderOpen } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { TopNav } from "../top-nav";
@@ -79,10 +80,10 @@ export default function ProjectsPage() {
                   >
                     {project.logoUrl ? <img src={project.logoUrl} alt="" /> : <FolderOpen size={18} />}
                   </span>
-                  <a className="project-list-main" href={`/projects/${project.id}`}>
+                  <Link className="project-list-main" href={`/projects/${project.id}`}>
                     <strong>{project.name}</strong>
                     <small>{project.description || project.healthApiUrl || "문서와 폴더를 관리합니다."}</small>
-                  </a>
+                  </Link>
                   <div className="health-site-meta">
                     {project.health ? (
                       <>

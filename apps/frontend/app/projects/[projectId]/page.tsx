@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRight, FileText, Folder, FolderOpen, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { FormEvent, MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -265,9 +266,9 @@ export default function ProjectDetailPage() {
               <p className="eyebrow">Project</p>
               <h1 id="project-title">{project?.name ?? "Project"}</h1>
             </div>
-            <a className="secondary-button project-back-link" href="/projects">
+            <Link className="secondary-button project-back-link" href="/projects">
               목록
-            </a>
+            </Link>
           </div>
 
           <div className="project-tree">
