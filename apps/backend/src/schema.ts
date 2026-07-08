@@ -143,6 +143,22 @@ export const slackSettings = pgTable("slack_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const workspaceUsers = pgTable(
+  "workspace_users",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    slackUserId: text("slack_user_id"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_users_slack_user_id_unique").on(table.slackUserId),
+    index("workspace_users_active_idx").on(table.isActive, table.name),
+  ],
+);
+
 export const slackListSources = pgTable(
   "slack_list_sources",
   {

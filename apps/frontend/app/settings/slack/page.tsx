@@ -33,7 +33,10 @@ type FieldMappingDraft = {
   sampleValue?: string;
   display: boolean;
   writable: boolean;
+  role: FieldRole;
 };
+
+type FieldRole = "assignee" | "status" | "title" | "done" | "none";
 
 type FilterDraft = {
   id: string;
@@ -46,10 +49,17 @@ const settingsUrl = "/api/slack/settings";
 const settingsTestUrl = "/api/slack/settings/test";
 const sourcesUrl = "/api/slack/lists/sources";
 const fieldsPreviewUrl = "/api/slack/lists/fields/preview";
+const fieldRoleOptions: { value: FieldRole; label: string }[] = [
+  { value: "none", label: "없음" },
+  { value: "title", label: "제목" },
+  { value: "assignee", label: "담당자" },
+  { value: "status", label: "상태" },
+  { value: "done", label: "완료" },
+];
 const defaultFieldMappings: FieldMappingDraft[] = [
-  { id: "field-title", key: "title", columnId: "Col...", type: "text", label: "제목", sampleValue: "", display: true, writable: false },
-  { id: "field-status", key: "status", columnId: "Col...", type: "select", label: "상태", sampleValue: "", display: true, writable: true },
-  { id: "field-assignee", key: "assignee", columnId: "Col...", type: "user", label: "담당자", sampleValue: "", display: true, writable: false },
+  { id: "field-title", key: "title", columnId: "Col...", type: "text", label: "제목", sampleValue: "", display: true, writable: false, role: "title" },
+  { id: "field-status", key: "status", columnId: "Col...", type: "select", label: "상태", sampleValue: "", display: true, writable: true, role: "status" },
+  { id: "field-assignee", key: "assignee", columnId: "Col...", type: "user", label: "담당자", sampleValue: "", display: true, writable: false, role: "assignee" },
 ];
 const defaultFilterRules: FilterDraft[] = [
   { id: "filter-status", field: "status", op: "in", value: "미분류, API 작업중" },
@@ -246,7 +256,7 @@ export default function SettingsSlackPage() {
       }
 
       setListIdDraft(result.listId ?? listIdDraft.trim());
-      setFieldMappingDraft(result.fields.map((field) => ({ ...field, id: createDraftId("field") })));
+      setFieldMappingDraft(dedupeFieldRoles(result.fields.map((field) => ({ ...field, id: createDraftId("field"), role: normalizeFieldRole(field.role) || guessFieldRole(field) }))));
       setFilterConfigDraft((rows) => rows.map((row) => (result.fields?.some((field) => field.key === row.field) ? row : { ...row, field: result.fields?.[0]?.key ?? row.field })));
       setMessage(
         result.labelSource === "schema"
@@ -300,7 +310,7 @@ export default function SettingsSlackPage() {
     setEditingSourceId(null);
     setNameDraft("");
     setListIdDraft("");
-    setFieldMappingDraft(defaultFieldMappings);
+    setFieldMappingDraft(defaultFieldMappings.map((row) => ({ ...row })));
     setFilterConfigDraft(defaultFilterRules);
     setMessage(null);
     setIsSourceFormOpen(true);
@@ -487,8 +497,16 @@ export default function SettingsSlackPage() {
               </div>
               <div className="slack-list-id-row">
                 <Input id="slack-list-id" value={listIdDraft} onChange={(event) => setListIdDraft(event.target.value)} placeholder="F... 또는 Slack List 링크" />
-                <Button className="secondary-button slack-load-fields-button" type="button" disabled={isLoadingFields || !listIdDraft.trim()} onClick={() => void loadFieldsFromSlack()}>
-                  {isLoadingFields ? "불러오는 중" : "필드 불러오기"}
+                <Button
+                  className="secondary-button compact-button slack-field-action-button slack-load-fields-button is-active"
+                  type="button"
+                  disabled={isLoadingFields || !listIdDraft.trim()}
+                  aria-label={isLoadingFields ? "필드 불러오는 중" : "필드 불러오기"}
+                  title={isLoadingFields ? "필드 불러오는 중" : "필드 불러오기"}
+                  onClick={() => void loadFieldsFromSlack()}
+                >
+                  <RefreshCw size={15} />
+                  <span>{isLoadingFields ? "로딩" : "불러오기"}</span>
                 </Button>
               </div>
             </div>
@@ -526,6 +544,21 @@ export default function SettingsSlackPage() {
                       </div>
                     </div>
                     <div className="slack-config-actions">
+                      <label className="slack-role-select">
+                        <span>역할</span>
+                        <select
+                          value={field.role}
+                          onChange={(event) =>
+                            setFieldMappingDraft((rows) => updateFieldRole(rows, field.id, event.target.value as FieldRole))
+                          }
+                        >
+                          {fieldRoleOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <Button
                         className={`secondary-button compact-button slack-field-action-button ${field.display ? "is-active" : "is-muted"}`}
                         type="button"
@@ -716,7 +749,7 @@ function createDraftId(prefix: string): string {
 }
 
 function createEmptyFieldMapping(): FieldMappingDraft {
-  return { id: createDraftId("field"), key: "", columnId: "", type: "text", label: "", sampleValue: "", display: true, writable: false };
+  return { id: createDraftId("field"), key: "", columnId: "", type: "text", label: "", sampleValue: "", display: true, writable: false, role: "none" };
 }
 
 function createEmptyFilterRule(): FilterDraft {
@@ -735,6 +768,16 @@ function updateRow<T extends { id: string }>(rows: T[], id: string, patch: Parti
   return rows.map((row) => (row.id === id ? { ...row, ...patch } : row));
 }
 
+function updateFieldRole(rows: FieldMappingDraft[], id: string, role: FieldRole): FieldMappingDraft[] {
+  return rows.map((row) => {
+    if (row.id === id) {
+      return { ...row, role };
+    }
+
+    return role !== "none" && row.role === role ? { ...row, role: "none" } : row;
+  });
+}
+
 function mappingToDraftRows(value: Record<string, unknown>): FieldMappingDraft[] {
   const rows = Object.entries(value).flatMap(([key, config]) => {
     if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -742,8 +785,7 @@ function mappingToDraftRows(value: Record<string, unknown>): FieldMappingDraft[]
     }
 
     const field = config as Record<string, unknown>;
-    return [
-      {
+    const draft = {
         id: createDraftId("field"),
         key,
         columnId: typeof field.columnId === "string" ? field.columnId : "",
@@ -752,11 +794,53 @@ function mappingToDraftRows(value: Record<string, unknown>): FieldMappingDraft[]
         sampleValue: typeof field.sampleValue === "string" ? field.sampleValue : "",
         display: field.display !== false,
         writable: field.writable === true,
-      },
-    ];
+        role: normalizeFieldRole(field.role) || "none",
+      };
+
+    return [{ ...draft, role: draft.role === "none" ? guessFieldRole(draft) : draft.role }];
   });
 
-  return rows.length > 0 ? rows : defaultFieldMappings.map((row) => ({ ...row }));
+  return rows.length > 0 ? dedupeFieldRoles(rows) : defaultFieldMappings.map((row) => ({ ...row }));
+}
+
+function dedupeFieldRoles(rows: FieldMappingDraft[]): FieldMappingDraft[] {
+  const usedRoles = new Set<FieldRole>();
+
+  return rows.map((row) => {
+    if (row.role === "none" || usedRoles.has(row.role)) {
+      return { ...row, role: "none" };
+    }
+
+    usedRoles.add(row.role);
+    return row;
+  });
+}
+
+function normalizeFieldRole(value: unknown): FieldRole | null {
+  return value === "assignee" || value === "status" || value === "title" || value === "done" || value === "none" ? value : null;
+}
+
+function guessFieldRole(field: Pick<FieldMappingDraft, "key" | "label" | "type">): FieldRole {
+  const type = field.type.toLowerCase();
+  const label = `${field.key} ${field.label}`.toLowerCase();
+
+  if (type === "user" && (label.includes("assignee") || label.includes("담당자") || label.includes("담당"))) {
+    return "assignee";
+  }
+
+  if ((type === "checkbox" || type === "completed") && (label.includes("done") || label.includes("complete") || label.includes("완료"))) {
+    return "done";
+  }
+
+  if (label.includes("status") || label.includes("상태")) {
+    return "status";
+  }
+
+  if (label.includes("title") || label.includes("제목") || label.includes("요청_사항") || label.includes("요청사항") || label.includes("요청 내용") || label.includes("name")) {
+    return "title";
+  }
+
+  return "none";
 }
 
 function filterToDraftRows(value: Record<string, unknown>): FilterDraft[] {

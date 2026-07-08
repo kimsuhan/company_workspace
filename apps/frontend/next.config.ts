@@ -23,6 +23,10 @@ const nextConfig: NextConfig = {
         source: "/api/slack/:path*",
         destination: `${backendUrl}/slack/:path*`,
       },
+      {
+        source: "/api/workspace-users/:path*",
+        destination: `${backendUrl}/api/workspace-users/:path*`,
+      },
     ];
   },
 };

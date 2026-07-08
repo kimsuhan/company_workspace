@@ -9,6 +9,7 @@ import { registerNoteRoutes } from "./notes.js";
 import { registerProjectRoutes, startProjectHealthPolling } from "./projects.js";
 import { registerSlackListRoutes, startSlackListPolling } from "./slack-lists.js";
 import { registerTodoRoutes } from "./todos.js";
+import { registerWorkspaceUserRoutes } from "./workspace-users.js";
 
 try {
   process.loadEnvFile?.();
@@ -45,6 +46,7 @@ registerFileRoutes(app);
 registerNoteRoutes(app);
 registerTodoRoutes(app);
 registerProjectRoutes(app);
+registerWorkspaceUserRoutes(app);
 registerSlackListRoutes(app);
 
 const port = Number(process.env.PORT ?? 13001);

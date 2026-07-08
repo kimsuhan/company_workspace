@@ -9,6 +9,7 @@ import { TopNav } from "../top-nav";
 const settingsNavItems = [
   { href: "/settings", label: "Workspace Settings" },
   { href: "/settings/projects", label: "Projects" },
+  { href: "/settings/users", label: "Users" },
   { href: "/settings/slack", label: "Slack Lists" },
 ];
 

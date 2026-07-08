@@ -1,9 +1,9 @@
 import type { Hono } from "hono";
-import { and, desc, eq, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import cron from "node-cron";
 
 import { getDb } from "./db.js";
-import { slackListItems, slackListSources, slackSettings } from "./schema.js";
+import { slackListItems, slackListSources, slackSettings, workspaceUsers } from "./schema.js";
 
 const SLACK_API_URL = "https://slack.com/api";
 const SSE_HEARTBEAT_MS = 25_000;
@@ -17,6 +17,7 @@ export type SlackListFieldMapping = {
   sampleValue?: string;
   display?: boolean;
   writable?: boolean;
+  role?: SlackListFieldRole;
 };
 
 export type SlackMappedField = {
@@ -26,6 +27,19 @@ export type SlackMappedField = {
   display: boolean;
   writable: boolean;
   columnId: string | null;
+  role?: SlackListFieldRole;
+  userIds?: string[];
+};
+
+export type SlackListFieldRole = "assignee" | "status" | "title" | "done" | "none";
+
+type WorkspaceUserSummary = {
+  id: number;
+  name: string;
+  slackUserId: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type SlackListFilterCondition = {
@@ -123,6 +137,7 @@ type SlackListFieldPreview = {
 
 type SlackListSourceRow = typeof slackListSources.$inferSelect;
 type SlackListItemRow = typeof slackListItems.$inferSelect;
+type WorkspaceUserRow = typeof workspaceUsers.$inferSelect;
 
 type SlackListSourceInput = {
   name?: unknown;
@@ -133,6 +148,8 @@ type SlackListSourceInput = {
   filterRules?: unknown;
   isActive?: unknown;
 };
+
+type SlackListItemResponse = ReturnType<typeof mapSlackListItemRow>;
 
 const sseClients = new Set<ReadableStreamDefaultController<string>>();
 
@@ -194,6 +211,8 @@ export function mapSlackItemToMappedFields(
 
   for (const [name, config] of Object.entries(mapping)) {
     const field = (config.columnId ? byColumnId.get(config.columnId) : undefined) ?? (config.key ? byKey.get(config.key) : undefined);
+    const role = normalizeSlackFieldRole(config.role);
+    const userIds = field ? readSlackUserIds(field) : [];
     mapped[name] = {
       label: config.label?.trim() || name,
       value: field ? readSlackFieldValue(field) : null,
@@ -201,6 +220,8 @@ export function mapSlackItemToMappedFields(
       display: config.display !== false,
       writable: config.writable === true,
       columnId: config.columnId ?? field?.column_id ?? null,
+      ...(role === "none" ? {} : { role }),
+      ...(userIds.length > 0 ? { userIds } : {}),
     };
   }
 
@@ -415,17 +436,17 @@ export function readSlackListSourceInput(input: SlackListSourceInput, current?: 
   };
 }
 
-export async function listSlackListItems(): Promise<ReturnType<typeof mapSlackListItemRow>[]> {
+export async function listSlackListItems(): Promise<SlackListItemResponse[]> {
   const rows = await getDb()
     .select()
     .from(slackListItems)
     .where(eq(slackListItems.isActive, true))
     .orderBy(desc(slackListItems.lastSeenAt));
 
-  return rows.map(mapSlackListItemRow);
+  return mapSlackListItemRows(rows);
 }
 
-export async function syncSlackListSource(sourceId: number): Promise<ReturnType<typeof mapSlackListItemRow>[]> {
+export async function syncSlackListSource(sourceId: number): Promise<SlackListItemResponse[]> {
   const token = await getStoredSlackToken();
 
   if (!token) {
@@ -660,7 +681,13 @@ export function registerSlackListRoutes(app: Hono): void {
     }
 
     const item = await getSlackListItem(itemId);
-    return item ? c.json(mapSlackListItemRow(item)) : c.json({ error: "Slack list item not found" }, 404);
+
+    if (!item) {
+      return c.json({ error: "Slack list item not found" }, 404);
+    }
+
+    const [mappedItem] = await mapSlackListItemRows([item]);
+    return c.json(mappedItem);
   });
   app.patch("/slack/lists/items/:id/cells", async (c) => {
     const itemId = readRouteId(c.req.param("id"));
@@ -695,11 +722,12 @@ export function registerSlackListRoutes(app: Hono): void {
 
     const [updated] = await getDb()
       .update(slackListItems)
-      .set({ mappedFields, title: getMappedTitle(mappedFields), lastSeenAt: new Date() })
+      .set({ mappedFields, title: getMappedTitle(mappedFields, readMappingConfig(source.fieldMapping)), lastSeenAt: new Date() })
       .where(eq(slackListItems.id, item.id))
       .returning();
     await broadcastSlackListItems(await listSlackListItems());
-    return c.json(mapSlackListItemRow(updated));
+    const [mappedItem] = await mapSlackListItemRows([updated]);
+    return c.json(mappedItem);
   });
 }
 
@@ -859,7 +887,7 @@ async function callSlackApi<T extends { ok: boolean; error?: string }>(
   return data;
 }
 
-async function saveSlackListItems(source: SlackListSourceRow, items: SlackListItem[]): Promise<ReturnType<typeof mapSlackListItemRow>[]> {
+async function saveSlackListItems(source: SlackListSourceRow, items: SlackListItem[]): Promise<SlackListItemResponse[]> {
   const db = getDb();
   const now = new Date();
   const mapping = readMappingConfig(source.fieldMapping);
@@ -918,17 +946,18 @@ async function saveSlackListItems(source: SlackListSourceRow, items: SlackListIt
     .where(and(eq(slackListItems.sourceId, source.id), eq(slackListItems.isActive, true)))
     .orderBy(desc(slackListItems.lastSeenAt));
 
-  return rows.map(mapSlackListItemRow);
+  return mapSlackListItemRows(rows);
 }
 
 function mapSlackItemForSource(source: SlackListSourceRow, item: SlackListItem) {
-  const mappedFields = mapSlackItemToMappedFields(item, readMappingConfig(source.fieldMapping));
+  const mapping = readMappingConfig(source.fieldMapping);
+  const mappedFields = mapSlackItemToMappedFields(item, mapping);
 
   return {
     sourceId: source.id,
     sourceName: source.name,
     slackItemId: item.id,
-    title: getMappedTitle(mappedFields),
+    title: getMappedTitle(mappedFields, mapping),
     mappedFields,
     rawItem: item as unknown as Record<string, unknown>,
     slackCreatedAt: item.date_created ? new Date(item.date_created * 1000).toISOString() : null,
@@ -952,19 +981,63 @@ function mapSlackListSourceRow(row: SlackListSourceRow) {
   };
 }
 
-function mapSlackListItemRow(row: SlackListItemRow) {
+async function mapSlackListItemRows(rows: SlackListItemRow[]): Promise<SlackListItemResponse[]> {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const sourceIds = Array.from(new Set(rows.map((row) => row.sourceId)));
+  const [sources, users] = await Promise.all([
+    getDb().select().from(slackListSources).where(inArray(slackListSources.id, sourceIds)),
+    getDb().select().from(workspaceUsers).where(eq(workspaceUsers.isActive, true)),
+  ]);
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
+  const userBySlackId = new Map(users.flatMap((user) => (user.slackUserId ? [[user.slackUserId, user]] : [])));
+
+  return rows.map((row) => mapSlackListItemRow(row, sourceById.get(row.sourceId), userBySlackId));
+}
+
+function mapSlackListItemRow(
+  row: SlackListItemRow,
+  source?: SlackListSourceRow,
+  userBySlackId: Map<string, WorkspaceUserRow> = new Map(),
+) {
+  const mappedFields = row.mappedFields as Record<string, SlackMappedField>;
+  const mapping = source ? readMappingConfig(source.fieldMapping) : undefined;
+  const fieldRoles = getSlackFieldRoles(mappedFields, mapping);
+  const assignedUsers = getAssignedSlackUserIds(mappedFields, mapping)
+    .flatMap((slackUserId) => {
+      const user = userBySlackId.get(slackUserId);
+      return user ? [mapWorkspaceUserSummary(user)] : [];
+    });
+  const title = getMappedTitle(mappedFields, mapping);
+
   return {
     id: row.id,
     sourceId: row.sourceId,
+    sourceName: source?.name ?? null,
     slackItemId: row.slackItemId,
-    title: row.title,
-    mappedFields: row.mappedFields,
+    title: title === "Untitled" ? row.title : title,
+    mappedFields,
+    assignedUsers,
+    fieldRoles,
     rawItem: row.rawItem,
     isActive: row.isActive,
     slackCreatedAt: row.slackCreatedAt?.toISOString() ?? null,
     slackUpdatedAt: row.slackUpdatedAt?.toISOString() ?? null,
     firstSeenAt: row.firstSeenAt.toISOString(),
     lastSeenAt: row.lastSeenAt.toISOString(),
+  };
+}
+
+function mapWorkspaceUserSummary(row: WorkspaceUserRow): WorkspaceUserSummary {
+  return {
+    id: row.id,
+    name: row.name,
+    slackUserId: row.slackUserId,
+    isActive: row.isActive,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -990,6 +1063,59 @@ function readSlackFieldValue(field: SlackListItemField): unknown {
   }
 
   return field.value ?? null;
+}
+
+function readSlackUserIds(field: SlackListItemField): string[] {
+  return uniqueSlackUserIds([...(field.user ?? []), ...extractSlackUserIds(field.value)]);
+}
+
+export function getSlackFieldRoles(
+  fields: Record<string, SlackMappedField>,
+  mapping: Record<string, SlackListFieldMapping> = {},
+): Partial<Record<Exclude<SlackListFieldRole, "none">, string>> {
+  const roles: Partial<Record<Exclude<SlackListFieldRole, "none">, string>> = {};
+
+  for (const [key, field] of Object.entries(fields)) {
+    const role = normalizeSlackFieldRole(field.role ?? mapping[key]?.role);
+
+    if (role !== "none" && roles[role] === undefined) {
+      roles[role] = key;
+    }
+  }
+
+  for (const [key, field] of Object.entries(fields)) {
+    const role = guessSlackFieldRole(key, field, mapping[key]);
+
+    if (role !== "none" && roles[role] === undefined) {
+      roles[role] = key;
+    }
+  }
+
+  return roles;
+}
+
+export function getAssignedSlackUserIds(
+  fields: Record<string, SlackMappedField>,
+  mapping: Record<string, SlackListFieldMapping> = {},
+): string[] {
+  const roles = getSlackFieldRoles(fields, mapping);
+  const assigneeField = roles.assignee ? fields[roles.assignee] : undefined;
+
+  if (!assigneeField) {
+    return [];
+  }
+
+  return uniqueSlackUserIds([...(assigneeField.userIds ?? []), ...extractSlackUserIds(assigneeField.value)]);
+}
+
+export function isSlackListItemDone(
+  fields: Record<string, SlackMappedField>,
+  mapping: Record<string, SlackListFieldMapping> = {},
+): boolean {
+  const roles = getSlackFieldRoles(fields, mapping);
+  const doneField = roles.done ? fields[roles.done] : undefined;
+
+  return doneField ? isTruthySlackValue(doneField.value) : false;
 }
 
 function inferSlackFieldType(field: SlackListItemField): string {
@@ -1025,6 +1151,99 @@ function normalizePreviewKey(value: string): string {
     .replace(/^_+|_+$/g, "");
 
   return normalized || value;
+}
+
+function normalizeSlackFieldRole(value: unknown): SlackListFieldRole {
+  return value === "assignee" || value === "status" || value === "title" || value === "done" ? value : "none";
+}
+
+function guessSlackFieldRole(
+  key: string,
+  field: SlackMappedField,
+  mapping?: SlackListFieldMapping,
+): SlackListFieldRole {
+  const explicitRole = normalizeSlackFieldRole(mapping?.role);
+
+  if (explicitRole !== "none") {
+    return explicitRole;
+  }
+
+  const type = (field.type || mapping?.type || "").toLowerCase();
+  const label = `${key} ${field.label} ${mapping?.label ?? ""}`.toLowerCase();
+
+  if (type === "user" && (label.includes("assignee") || label.includes("담당자") || label.includes("담당") || label.includes("owner"))) {
+    return "assignee";
+  }
+
+  if ((type === "checkbox" || type === "completed") && (label.includes("done") || label.includes("complete") || label.includes("완료"))) {
+    return "done";
+  }
+
+  if (label.includes("status") || label.includes("상태")) {
+    return "status";
+  }
+
+  if (
+    label.includes("title") ||
+    label.includes("제목") ||
+    label.includes("요청_사항") ||
+    label.includes("요청사항") ||
+    label.includes("요청 내용") ||
+    label.includes("name")
+  ) {
+    return "title";
+  }
+
+  return "none";
+}
+
+function extractSlackUserIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(extractSlackUserIds);
+  }
+
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const trimmed = value.trim().toUpperCase();
+  return /^U[A-Z0-9]+$/.test(trimmed) ? [trimmed] : [];
+}
+
+function uniqueSlackUserIds(values: string[]): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+
+  for (const value of values) {
+    const id = value.trim().toUpperCase();
+
+    if (/^U[A-Z0-9]+$/.test(id) && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+
+  return ids;
+}
+
+function isTruthySlackValue(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(isTruthySlackValue);
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  if (typeof value === "string") {
+    return ["true", "1", "yes", "y", "완료", "done", "completed"].includes(value.trim().toLowerCase());
+  }
+
+  return false;
 }
 
 function normalizeSlackSchemaType(type: string): string {
@@ -1113,10 +1332,11 @@ function normalizeJsonObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-function readMappingConfig(value: unknown): Record<string, SlackListFieldMapping> {
+export function readMappingConfig(value: unknown): Record<string, SlackListFieldMapping> {
   const parsed = typeof value === "string" ? JSON.parse(value) : value;
   const object = normalizeJsonObject(parsed);
   const mapping: Record<string, SlackListFieldMapping> = {};
+  const usedRoles = new Set<Exclude<SlackListFieldRole, "none">>();
 
   for (const [key, config] of Object.entries(object)) {
     if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -1124,6 +1344,7 @@ function readMappingConfig(value: unknown): Record<string, SlackListFieldMapping
     }
 
     const field = config as Record<string, unknown>;
+    const role = readMappingRole(field.role, usedRoles);
     mapping[key] = {
       columnId: typeof field.columnId === "string" ? field.columnId.trim() : undefined,
       key: typeof field.key === "string" ? field.key.trim() : undefined,
@@ -1132,6 +1353,7 @@ function readMappingConfig(value: unknown): Record<string, SlackListFieldMapping
       sampleValue: typeof field.sampleValue === "string" ? field.sampleValue.trim() : undefined,
       display: field.display !== false,
       writable: field.writable === true,
+      ...(role ? { role } : {}),
     };
   }
 
@@ -1144,6 +1366,7 @@ function readMappingRows(value: unknown): Record<string, SlackListFieldMapping> 
   }
 
   const mapping: Record<string, SlackListFieldMapping> = {};
+  const usedRoles = new Set<Exclude<SlackListFieldRole, "none">>();
 
   for (const row of value) {
     if (!row || typeof row !== "object" || Array.isArray(row)) {
@@ -1157,6 +1380,7 @@ function readMappingRows(value: unknown): Record<string, SlackListFieldMapping> 
       continue;
     }
 
+    const role = readMappingRole(item.role, usedRoles);
     mapping[key] = {
       columnId: typeof item.columnId === "string" ? item.columnId.trim() : undefined,
       type: typeof item.type === "string" && item.type.trim() ? item.type.trim() : "text",
@@ -1164,10 +1388,22 @@ function readMappingRows(value: unknown): Record<string, SlackListFieldMapping> 
       sampleValue: typeof item.sampleValue === "string" ? item.sampleValue.trim() : undefined,
       display: item.display !== false,
       writable: item.writable === true,
+      ...(role ? { role } : {}),
     };
   }
 
   return mapping;
+}
+
+function readMappingRole(value: unknown, usedRoles: Set<Exclude<SlackListFieldRole, "none">>): Exclude<SlackListFieldRole, "none"> | undefined {
+  const role = normalizeSlackFieldRole(value);
+
+  if (role === "none" || usedRoles.has(role)) {
+    return undefined;
+  }
+
+  usedRoles.add(role);
+  return role;
 }
 
 function readFilterConfig(value: unknown): SlackListFilter {
@@ -1234,8 +1470,12 @@ function readFilterRows(value: unknown): SlackListFilter {
   };
 }
 
-function getMappedTitle(fields: Record<string, SlackMappedField>): string {
-  const title = fields.title?.value;
+export function getMappedTitle(
+  fields: Record<string, SlackMappedField>,
+  mapping: Record<string, SlackListFieldMapping> = {},
+): string {
+  const roles = getSlackFieldRoles(fields, mapping);
+  const title = roles.title ? fields[roles.title]?.value : fields.title?.value;
 
   if (title !== null && title !== undefined && String(title).trim()) {
     return String(title).trim();

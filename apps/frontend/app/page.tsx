@@ -15,6 +15,7 @@ import {
   Plus,
   StickyNote,
   RotateCcw,
+  UserRound,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -130,20 +131,50 @@ type SlackMappedField = {
   display: boolean;
   writable: boolean;
   columnId: string | null;
+  role?: "assignee" | "status" | "title" | "done" | "none";
+  userIds?: string[];
+};
+
+type WorkspaceUser = {
+  id: number;
+  name: string;
+  slackUserId: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type SlackListItem = {
   id: number;
   sourceId: number;
+  sourceName: string | null;
   slackItemId: string;
   title: string;
   mappedFields: Record<string, SlackMappedField>;
+  assignedUsers?: WorkspaceUser[];
+  fieldRoles?: { assignee?: string; status?: string; title?: string; done?: string };
   rawItem: Record<string, unknown>;
   isActive: boolean;
   slackCreatedAt: string | null;
   slackUpdatedAt: string | null;
   firstSeenAt: string;
   lastSeenAt: string;
+};
+
+type WorkspaceUserCurrentTask = {
+  id: number;
+  sourceId: number;
+  sourceName: string;
+  slackItemId: string;
+  title: string;
+  status: string | null;
+  lastSeenAt: string;
+};
+
+type WorkspaceUserStatus = {
+  user: WorkspaceUser;
+  status: "working" | "idle";
+  currentTasks: WorkspaceUserCurrentTask[];
 };
 
 type ProjectContextMenu = {
@@ -188,6 +219,8 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [slackListItems, setSlackListItems] = useState<SlackListItem[]>([]);
   const [slackListsStatus, setSlackListsStatus] = useState("Loading");
+  const [workspaceUserStatuses, setWorkspaceUserStatuses] = useState<WorkspaceUserStatus[]>([]);
+  const [workspaceUsersStatus, setWorkspaceUsersStatus] = useState("Loading");
   const [selectedSlackListItemId, setSelectedSlackListItemId] = useState<number | null>(null);
   const [slackCellDrafts, setSlackCellDrafts] = useState<Record<string, string>>({});
   const [slackItemMessage, setSlackItemMessage] = useState<string | null>(null);
@@ -249,8 +282,9 @@ export default function Home() {
   const isNotesLive = notesStatus === "Live";
   const isProjectsLive = projectsStatus === "Live";
   const isSlackListsLive = slackListsStatus === "Live";
-  const liveServiceCount = [isReviewPrsLive, isTodoLive, isNotesLive, isProjectsLive, isSlackListsLive].filter(Boolean).length;
-  const liveSummaryLabel = liveServiceCount === 5 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
+  const isWorkspaceUsersLive = workspaceUsersStatus === "Live";
+  const liveServiceCount = [isReviewPrsLive, isTodoLive, isNotesLive, isProjectsLive, isSlackListsLive, isWorkspaceUsersLive].filter(Boolean).length;
+  const liveSummaryLabel = liveServiceCount === 6 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
   const effectiveDashboardGridSize = isDashboardGridMeasured && dashboardGridWidth < 860 ? 1 : dashboardGridLayoutSetting.cols;
   const isDashboardGridReady = isDashboardLayoutReady && isDashboardGridMeasured && dashboardGridWidth > 0;
   const dashboardGridRowHeight = effectiveDashboardGridSize === 1 ? 260 : 220;
@@ -683,6 +717,22 @@ export default function Home() {
     );
   };
 
+  const loadWorkspaceUserStatuses = async () => {
+    try {
+      const response = await fetch("/api/workspace-users/status");
+
+      if (!response.ok) {
+        throw new Error(`Workspace users failed: ${response.status}`);
+      }
+
+      setWorkspaceUserStatuses((await response.json()) as WorkspaceUserStatus[]);
+      setWorkspaceUsersStatus("Live");
+    } catch {
+      setWorkspaceUserStatuses([]);
+      setWorkspaceUsersStatus("Offline");
+    }
+  };
+
   useEffect(() => {
     const isEnabled = window.localStorage.getItem(alertsStorageKey) === "true";
 
@@ -889,6 +939,7 @@ export default function Home() {
       .then((items) => {
         setSlackListItems(items);
         setSlackListsStatus("Live");
+        void loadWorkspaceUserStatuses();
       })
       .catch(() => {
         setSlackListsStatus("Offline");
@@ -897,6 +948,7 @@ export default function Home() {
     events.onmessage = (event) => {
       setSlackListItems(JSON.parse(event.data) as SlackListItem[]);
       setSlackListsStatus("Live");
+      void loadWorkspaceUserStatuses();
     };
     events.onerror = () => {
       setSlackListsStatus("Offline");
@@ -905,6 +957,10 @@ export default function Home() {
     return () => {
       events.close();
     };
+  }, []);
+
+  useEffect(() => {
+    void loadWorkspaceUserStatuses();
   }, []);
 
   useEffect(() => {
@@ -1032,6 +1088,10 @@ export default function Home() {
               <span>
                 <i className={isSlackListsLive ? "status-dot live" : "status-dot offline"} aria-hidden="true" />
                 Slack Lists {isSlackListsLive ? "Online" : "Offline"}
+              </span>
+              <span>
+                <i className={isWorkspaceUsersLive ? "status-dot live" : "status-dot offline"} aria-hidden="true" />
+                Users {isWorkspaceUsersLive ? "Online" : "Offline"}
               </span>
             </div>
           </div>
@@ -1320,6 +1380,76 @@ export default function Home() {
                     </button>
                   ))
                 )}
+              </div>
+            </section>
+
+            <section
+              className="dashboard-card workspace-users-card"
+              key="workspace-users"
+              aria-labelledby="workspace-users-title"
+            >
+              <div className="card-header">
+                <div>
+                  <p className="eyebrow">Workspace</p>
+                  <h2 id="workspace-users-title">Users</h2>
+                </div>
+                <div className="card-actions">
+                  <Badge className="status-badge" variant="outline">
+                    {workspaceUserStatuses.filter((item) => item.status === "working").length}/{workspaceUserStatuses.length}
+                  </Badge>
+                  {getDashboardWidgetEditControls("workspace-users")}
+                </div>
+              </div>
+              <div className="workspace-user-status-list">
+                {workspaceUserStatuses.length === 0 ? (
+                  <>
+                    <p className="card-copy">
+                      {workspaceUsersStatus === "Offline" ? "사용자 상태를 불러오지 못했습니다." : "등록된 사용자가 없습니다."}
+                    </p>
+                    <Link className="dashboard-card-footer-link" href="/settings/users">
+                      사용자 설정
+                      <ArrowUpRight size={18} strokeWidth={1.7} />
+                    </Link>
+                  </>
+                ) : (
+                  workspaceUserStatuses.map((item) => (
+                    <article className={`workspace-user-status-item ${item.status}`} key={item.user.id}>
+                      <span className="health-logo" aria-hidden="true">
+                        <UserRound size={17} />
+                      </span>
+                      <div className="workspace-user-status-main">
+                        <div className="workspace-user-status-title">
+                          <strong>{item.user.name}</strong>
+                          <Badge className="status-badge" variant="outline">
+                            {item.status === "working" ? "일하는 중" : "놀고 있음"}
+                          </Badge>
+                        </div>
+                        {item.currentTasks.length > 0 ? (
+                          <div className="workspace-user-task-list">
+                            {item.currentTasks.slice(0, 2).map((task) => (
+                              <p key={`${item.user.id}-${task.id}`}>
+                                <span>{task.title}</span>
+                                <small>
+                                  {task.sourceName}
+                                  {task.status ? ` · ${task.status}` : ""}
+                                </small>
+                              </p>
+                            ))}
+                            {item.currentTasks.length > 2 ? <small>+{item.currentTasks.length - 2} more</small> : null}
+                          </div>
+                        ) : (
+                          <small className="workspace-user-idle-text">진행 중인 Slack 업무 없음</small>
+                        )}
+                      </div>
+                    </article>
+                  ))
+                )}
+                {workspaceUserStatuses.length > 0 ? (
+                  <Link className="dashboard-card-footer-link" href="/settings/users">
+                    사용자 설정
+                    <ArrowUpRight size={18} strokeWidth={1.7} />
+                  </Link>
+                ) : null}
               </div>
             </section>
 
@@ -1938,6 +2068,10 @@ function parseSlackFieldDraft(value: string, type: string): unknown {
 }
 
 function getSlackSourceLabel(item: SlackListItem): string {
+  if (item.sourceName) {
+    return item.sourceName;
+  }
+
   return typeof item.rawItem.list_id === "string" && item.rawItem.list_id.trim()
     ? item.rawItem.list_id
     : `Source #${item.sourceId}`;
@@ -1945,7 +2079,7 @@ function getSlackSourceLabel(item: SlackListItem): string {
 
 function getSlackItemSummary(item: SlackListItem): string {
   const summary = Object.entries(item.mappedFields)
-    .filter(([key, field]) => key !== "title" && field.display && formatSlackFieldValue(field.value))
+    .filter(([key, field]) => key !== item.fieldRoles?.title && key !== "title" && field.display && formatSlackFieldValue(field.value))
     .slice(0, 3)
     .map(([, field]) => `${field.label} ${formatSlackFieldValue(field.value)}`)
     .join(" · ");
@@ -1954,7 +2088,8 @@ function getSlackItemSummary(item: SlackListItem): string {
 }
 
 function getSlackStatusLabel(item: SlackListItem): string {
-  const status = item.mappedFields.status?.value;
+  const statusKey = item.fieldRoles?.status ?? "status";
+  const status = item.mappedFields[statusKey]?.value;
   return formatSlackFieldValue(status) || "Synced";
 }
 

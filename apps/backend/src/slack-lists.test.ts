@@ -5,13 +5,18 @@ import {
   applyCsvHeadersToFieldPreviews,
   applySlackListSchemaToFieldPreviews,
   buildSlackUpdateCells,
+  getAssignedSlackUserIds,
+  getMappedTitle,
+  getSlackFieldRoles,
   getSlackBackoffUntil,
   inferSlackListFieldPreviews,
+  isSlackListItemDone,
   mapSlackItemToMappedFields,
   maskSlackToken,
   matchesSlackListFilter,
   parseSlackListCsvHeader,
   parseCsvHeaderRow,
+  type SlackMappedField,
   type SlackListFieldMapping,
   parseSlackListId,
   readSlackListSourceInput,
@@ -119,6 +124,41 @@ test("readSlackListSourceInput converts UI rows to stored JSON config", () => {
       { field: "title", op: "exists" },
     ],
   });
+});
+
+test("readSlackListSourceInput keeps one mapping role per Slack list", () => {
+  const input = readSlackListSourceInput({
+    name: "고객 요청",
+    listId: "F093EH44RPV",
+    fieldMappings: [
+      { key: "assignee", label: "담당자", columnId: "ColAssignee", type: "user", role: "assignee" },
+      { key: "owner", label: "작성자", columnId: "ColOwner", type: "user", role: "assignee" },
+      { key: "done", label: "완료됨", columnId: "ColDone", type: "checkbox", role: "done" },
+      { key: "title", label: "요청 사항", columnId: "ColTitle", type: "text", role: "title" },
+    ],
+  });
+
+  assert.deepEqual(input.fieldMapping, {
+    assignee: { columnId: "ColAssignee", type: "user", label: "담당자", sampleValue: undefined, display: true, writable: false, role: "assignee" },
+    owner: { columnId: "ColOwner", type: "user", label: "작성자", sampleValue: undefined, display: true, writable: false },
+    done: { columnId: "ColDone", type: "checkbox", label: "완료됨", sampleValue: undefined, display: true, writable: false, role: "done" },
+    title: { columnId: "ColTitle", type: "text", label: "요청 사항", sampleValue: undefined, display: true, writable: false, role: "title" },
+  });
+});
+
+test("role helpers read title, assignee, status, and done fields", () => {
+  const fields: Record<string, SlackMappedField> = {
+    status: { label: "상태", value: "API 작업중", type: "select", display: true, writable: false, columnId: "ColStatus", role: "status" },
+    assignee: { label: "담당자", value: ["U0675BWGM6E", "U08HELASRED"], type: "user", display: true, writable: false, columnId: "ColAssignee", role: "assignee" },
+    done: { label: "완료됨", value: false, type: "checkbox", display: true, writable: false, columnId: "ColDone", role: "done" },
+    title: { label: "요청 사항", value: "BM 관련 기능 요청", type: "text", display: true, writable: false, columnId: "ColTitle", role: "title" },
+  };
+
+  assert.equal(getMappedTitle(fields), "BM 관련 기능 요청");
+  assert.deepEqual(getSlackFieldRoles(fields), { assignee: "assignee", status: "status", title: "title", done: "done" });
+  assert.deepEqual(getAssignedSlackUserIds(fields), ["U0675BWGM6E", "U08HELASRED"]);
+  assert.equal(isSlackListItemDone(fields), false);
+  assert.equal(isSlackListItemDone({ ...fields, done: { ...fields.done, value: true } }), true);
 });
 
 test("inferSlackListFieldPreviews builds mapping rows from sample item fields", () => {

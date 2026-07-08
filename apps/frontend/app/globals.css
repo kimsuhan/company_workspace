@@ -1001,7 +1001,8 @@ body {
 
 .pr-list,
 .todo-list,
-.health-list {
+.health-list,
+.workspace-user-status-list {
   display: grid;
   align-content: start;
   gap: 10px;
@@ -1121,6 +1122,85 @@ body {
 
 .project-dashboard-item {
   grid-template-columns: 42px minmax(0, 1fr) auto;
+}
+
+.workspace-users-card {
+  min-width: 0;
+}
+
+.workspace-user-status-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border-top: 1px solid #262626;
+  padding-top: 10px;
+}
+
+.workspace-user-status-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.workspace-user-status-item.working .health-logo {
+  border-color: #0fa336;
+  color: #fff;
+}
+
+.workspace-user-status-main {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.workspace-user-status-title {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.workspace-user-status-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-user-task-list {
+  display: grid;
+  gap: 5px;
+}
+
+.workspace-user-task-list p {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.workspace-user-task-list span {
+  overflow: hidden;
+  color: #e6e6e6;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-user-task-list small,
+.workspace-user-idle-text {
+  overflow: hidden;
+  color: #7e7e7e;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .todo-color-bar {
@@ -1778,8 +1858,8 @@ body {
 }
 
 .slack-list-id-row .slack-load-fields-button {
-  width: auto;
-  white-space: nowrap;
+  width: 42px;
+  min-width: 42px;
 }
 
 .slack-config-panel {
@@ -1913,6 +1993,33 @@ body {
   align-self: start;
   gap: 6px;
   padding-top: 18px;
+}
+
+.slack-role-select {
+  display: grid;
+  gap: 4px;
+  width: 92px;
+}
+
+.slack-role-select span {
+  color: #8f8f8f;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.slack-role-select select {
+  height: 38px;
+  min-height: 38px;
+  border: 1px solid #3c3c3c;
+  background: #151515;
+  color: #e6e6e6;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 8px;
 }
 
 .slack-field-action-button {
