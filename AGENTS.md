@@ -1,5 +1,6 @@
 # 실행 환경
 
+- 이 프로젝트는 `main` 브랜치에서만 작업한다. 별도 브랜치/PR 흐름은 사용자가 명시적으로 요청한 경우에만 만든다.
 - 개발 서버는 작업자가 직접 실행하고, 작업 종료 전 브라우저에서 실제 화면을 확인한다.
 - 브라우저 화면 검증은 Codex 인앱 브라우저를 우선 사용한다. 사용자의 일반 Chrome은 명시 요청이 있거나 인앱 브라우저로 검증이 불가능한 경우에만 사용하고, 사용 전 이유를 보고한다.
 - Codex 인앱 브라우저 검증 시 `computer-use`로 Codex 앱을 직접 조작하려 하지 말고, `browser:control-in-app-browser` 스킬을 읽은 뒤 `node_repl`에서 browser-client로 `agent.browsers.get("iab")`에 연결한다.
