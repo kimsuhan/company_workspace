@@ -9,6 +9,7 @@
 - Project Health 동작/API/등록 방법은 `docs/project-health.md`를 기준으로 확인한다.
 - 공통 파일 업로드 구조는 `docs/files/common-file-upload.md`를 기준으로 확인한다.
 - PM2 배포 패키징/갱신 절차는 `docs/deploy/pm2.md`를 기준으로 확인한다.
+- Slack Lists 연동/설정/필드 매핑은 `docs/slack/lists.md`를 기준으로 확인한다.
 
 # 디자인 작업 지침
 
