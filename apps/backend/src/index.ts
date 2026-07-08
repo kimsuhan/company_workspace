@@ -7,6 +7,7 @@ import { registerFileRoutes, startFileCleanup } from "./files.js";
 import { registerGithubReviewPrRoutes, startGithubReviewPrPolling } from "./github-review-prs.js";
 import { registerNoteRoutes } from "./notes.js";
 import { registerProjectRoutes, startProjectHealthPolling } from "./projects.js";
+import { registerSlackListRoutes, startSlackListPolling } from "./slack-lists.js";
 import { registerTodoRoutes } from "./todos.js";
 
 try {
@@ -44,6 +45,7 @@ registerFileRoutes(app);
 registerNoteRoutes(app);
 registerTodoRoutes(app);
 registerProjectRoutes(app);
+registerSlackListRoutes(app);
 
 const port = Number(process.env.PORT ?? 13001);
 
@@ -52,6 +54,7 @@ await migrateDatabase();
 const stopGithubReviewPrPolling = startGithubReviewPrPolling();
 const stopProjectHealthPolling = startProjectHealthPolling();
 const stopFileCleanup = startFileCleanup();
+const stopSlackListPolling = startSlackListPolling();
 
 serve({
   fetch: app.fetch,
@@ -65,6 +68,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     stopGithubReviewPrPolling();
     stopProjectHealthPolling();
     stopFileCleanup();
+    stopSlackListPolling();
     await closeDatabase();
     process.exit(0);
   });

@@ -40,6 +40,8 @@ test("parseDashboardWidgetLayout removes unknown widgets and appends missing wid
       { id: "todo", x: 1, y: 0, w: 2, h: 1 },
       { id: "review-prs", x: 0, y: 0, w: 1, h: 1 },
       { id: "projects", x: 0, y: 1, w: 1, h: 1 },
+      { id: "inbox", x: 1, y: 1, w: 1, h: 1 },
+      { id: "slack-lists", x: 0, y: 2, w: 2, h: 1 },
     ],
   );
 });
@@ -51,6 +53,8 @@ test("parseDashboardWidgetLayout migrates old span-only widgets", () => {
       { id: "todo", x: 1, y: 0, w: 2, h: 1 },
       { id: "review-prs", x: 0, y: 0, w: 1, h: 1 },
       { id: "projects", x: 0, y: 1, w: 1, h: 1 },
+      { id: "inbox", x: 1, y: 1, w: 1, h: 1 },
+      { id: "slack-lists", x: 0, y: 2, w: 2, h: 1 },
     ],
   );
 });
@@ -69,6 +73,8 @@ test("normalizeDashboardWidgetLayout keeps known widgets and clamps to the grid"
       { id: "todo", x: 0, y: 0, w: 3, h: 2 },
       { id: "projects", x: 0, y: 2, w: 1, h: 1 },
       { id: "review-prs", x: 0, y: 0, w: 1, h: 1 },
+      { id: "inbox", x: 1, y: 1, w: 1, h: 1 },
+      { id: "slack-lists", x: 0, y: 2, w: 2, h: 1 },
     ],
   );
 });
@@ -78,5 +84,7 @@ test("normalizeDashboardWidgetLayout allows widget height beyond the column grid
     { id: "todo", x: 0, y: 0, w: 1, h: 5 },
     { id: "review-prs", x: 0, y: 0, w: 1, h: 1 },
     { id: "projects", x: 0, y: 1, w: 1, h: 1 },
+    { id: "inbox", x: 1, y: 1, w: 1, h: 1 },
+    { id: "slack-lists", x: 0, y: 2, w: 2, h: 1 },
   ]);
 });

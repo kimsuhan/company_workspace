@@ -4,11 +4,13 @@ import {
   date,
   index,
   integer,
+  jsonb,
   type AnyPgColumn,
   pgTable,
   serial,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const githubReviewPullRequests = pgTable("github_review_pull_requests", {
@@ -131,5 +133,55 @@ export const projectNodes = pgTable(
   },
   (table) => [
     index("project_nodes_project_parent_sort_idx").on(table.projectId, table.parentId, table.sortOrder),
+  ],
+);
+
+export const slackSettings = pgTable("slack_settings", {
+  id: integer("id").primaryKey().default(1),
+  botToken: text("bot_token").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const slackListSources = pgTable(
+  "slack_list_sources",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    listId: text("list_id").notNull(),
+    fieldMapping: jsonb("field_mapping").$type<Record<string, unknown>>().notNull().default({}),
+    filterConfig: jsonb("filter_config").$type<Record<string, unknown>>().notNull().default({ all: [] }),
+    isActive: boolean("is_active").notNull().default(true),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    syncBackoffUntil: timestamp("sync_backoff_until", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("slack_list_sources_active_idx").on(table.isActive, table.updatedAt),
+  ],
+);
+
+export const slackListItems = pgTable(
+  "slack_list_items",
+  {
+    id: serial("id").primaryKey(),
+    sourceId: integer("source_id")
+      .notNull()
+      .references(() => slackListSources.id, { onDelete: "cascade" }),
+    slackItemId: text("slack_item_id").notNull(),
+    title: text("title").notNull(),
+    mappedFields: jsonb("mapped_fields").$type<Record<string, unknown>>().notNull().default({}),
+    rawItem: jsonb("raw_item").$type<Record<string, unknown>>().notNull().default({}),
+    isActive: boolean("is_active").notNull().default(true),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    slackCreatedAt: timestamp("slack_created_at", { withTimezone: true }),
+    slackUpdatedAt: timestamp("slack_updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("slack_list_items_source_item_unique").on(table.sourceId, table.slackItemId),
+    index("slack_list_items_source_active_idx").on(table.sourceId, table.isActive, table.lastSeenAt),
   ],
 );

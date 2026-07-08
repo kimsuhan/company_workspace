@@ -9,6 +9,7 @@ import { TopNav } from "../top-nav";
 const settingsNavItems = [
   { href: "/settings", label: "Workspace Settings" },
   { href: "/settings/projects", label: "Projects" },
+  { href: "/settings/slack", label: "Slack Lists" },
 ];
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {

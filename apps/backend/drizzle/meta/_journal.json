@@ -92,6 +92,13 @@
       "when": 1783472400000,
       "tag": "0012_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783501200000,
+      "tag": "0013_slack_lists",
+      "breakpoints": true
     }
   ]
 }

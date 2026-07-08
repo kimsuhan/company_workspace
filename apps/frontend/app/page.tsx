@@ -123,6 +123,29 @@ type Project = {
   updatedAt: string;
 };
 
+type SlackMappedField = {
+  label: string;
+  value: unknown;
+  type: string;
+  display: boolean;
+  writable: boolean;
+  columnId: string | null;
+};
+
+type SlackListItem = {
+  id: number;
+  sourceId: number;
+  slackItemId: string;
+  title: string;
+  mappedFields: Record<string, SlackMappedField>;
+  rawItem: Record<string, unknown>;
+  isActive: boolean;
+  slackCreatedAt: string | null;
+  slackUpdatedAt: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+};
+
 type ProjectContextMenu = {
   x: number;
   y: number;
@@ -163,6 +186,12 @@ export default function Home() {
   const [noteContentTextDraft, setNoteContentTextDraft] = useState("");
   const [projectsStatus, setProjectsStatus] = useState("Loading");
   const [projects, setProjects] = useState<Project[]>([]);
+  const [slackListItems, setSlackListItems] = useState<SlackListItem[]>([]);
+  const [slackListsStatus, setSlackListsStatus] = useState("Loading");
+  const [selectedSlackListItemId, setSelectedSlackListItemId] = useState<number | null>(null);
+  const [slackCellDrafts, setSlackCellDrafts] = useState<Record<string, string>>({});
+  const [slackItemMessage, setSlackItemMessage] = useState<string | null>(null);
+  const [isUpdatingSlackItem, setIsUpdatingSlackItem] = useState(false);
   const [selectedTodoId, setSelectedTodoId] = useState<number | null>(null);
   const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
   const [todoTitleDraft, setTodoTitleDraft] = useState("");
@@ -183,7 +212,7 @@ export default function Home() {
   const [dashboardGridLayoutSetting, setDashboardGridLayoutSetting] = useState<DashboardGridLayout>(defaultDashboardGridLayout);
   const [dashboardWidgetLayout, setDashboardWidgetLayout] = useState<DashboardWidgetLayout[]>(defaultDashboardWidgetLayout);
   const [isDashboardEditing, setIsDashboardEditing] = useState(false);
-  const [isDashboardLayoutReady, setIsDashboardLayoutReady] = useState(false);
+  const [isDashboardLayoutReady, setIsDashboardLayoutReady] = useState(true);
   const [now, setNow] = useState(() => new Date());
   const { containerRef: dashboardGridRef, mounted: isDashboardGridMeasured, width: dashboardGridWidth } = useContainerWidth();
   const healthChartRef = useRef<HTMLCanvasElement | null>(null);
@@ -200,6 +229,13 @@ export default function Home() {
   const reviewPrContextTarget =
     reviewPullRequests.find((pullRequest) => pullRequest.githubIssueId === reviewPrContextMenu?.githubIssueId) ?? null;
   const selectedProjectStatus = projects.find((project) => project.id === selectedProjectStatusId && project.health) ?? null;
+  const selectedSlackListItem = slackListItems.find((item) => item.id === selectedSlackListItemId) ?? null;
+  const selectedSlackDisplayFields = selectedSlackListItem
+    ? Object.entries(selectedSlackListItem.mappedFields).filter(([, field]) => field.display)
+    : [];
+  const selectedSlackWritableFields = selectedSlackListItem
+    ? Object.entries(selectedSlackListItem.mappedFields).filter(([, field]) => field.writable)
+    : [];
   const todoGroups = projects
     .map((project) => ({
       project,
@@ -212,8 +248,9 @@ export default function Home() {
   const isTodoLive = todoStatus === "Live";
   const isNotesLive = notesStatus === "Live";
   const isProjectsLive = projectsStatus === "Live";
-  const liveServiceCount = [isReviewPrsLive, isTodoLive, isNotesLive, isProjectsLive].filter(Boolean).length;
-  const liveSummaryLabel = liveServiceCount === 4 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
+  const isSlackListsLive = slackListsStatus === "Live";
+  const liveServiceCount = [isReviewPrsLive, isTodoLive, isNotesLive, isProjectsLive, isSlackListsLive].filter(Boolean).length;
+  const liveSummaryLabel = liveServiceCount === 5 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
   const effectiveDashboardGridSize = isDashboardGridMeasured && dashboardGridWidth < 860 ? 1 : dashboardGridLayoutSetting.cols;
   const isDashboardGridReady = isDashboardLayoutReady && isDashboardGridMeasured && dashboardGridWidth > 0;
   const dashboardGridRowHeight = effectiveDashboardGridSize === 1 ? 260 : 220;
@@ -489,6 +526,61 @@ export default function Home() {
     window.open(pullRequest.url, "_blank", "noopener,noreferrer");
   };
 
+  const openSlackListItem = (item: SlackListItem) => {
+    setSelectedSlackListItemId(item.id);
+    setSlackCellDrafts(
+      Object.fromEntries(
+        Object.entries(item.mappedFields)
+          .filter(([, field]) => field.writable)
+          .map(([key, field]) => [key, formatSlackFieldValue(field.value)]),
+      ),
+    );
+    setSlackItemMessage(null);
+  };
+
+  const updateSlackListItemCells = async () => {
+    if (!selectedSlackListItem || selectedSlackWritableFields.length === 0) {
+      return;
+    }
+
+    setIsUpdatingSlackItem(true);
+    setSlackItemMessage(null);
+
+    try {
+      const values = Object.fromEntries(
+        selectedSlackWritableFields.map(([key, field]) => [
+          key,
+          parseSlackFieldDraft(slackCellDrafts[key] ?? "", field.type),
+        ]),
+      );
+      const response = await fetch(`/api/slack/lists/items/${selectedSlackListItem.id}/cells`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ values }),
+      });
+      const result = (await response.json().catch(() => null)) as SlackListItem | { error?: string } | null;
+
+      if (!response.ok || !isSlackListItem(result)) {
+        throw new Error(result && "error" in result ? result.error : `Slack item update failed: ${response.status}`);
+      }
+
+      const updatedItem = result;
+      setSlackListItems((items) => items.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+      setSlackCellDrafts(
+        Object.fromEntries(
+          Object.entries(updatedItem.mappedFields)
+            .filter(([, field]) => field.writable)
+            .map(([key, field]) => [key, formatSlackFieldValue(field.value)]),
+        ),
+      );
+      setSlackItemMessage("Slack List에 저장했습니다.");
+    } catch (error) {
+      setSlackItemMessage(error instanceof Error ? error.message : "Slack List 저장에 실패했습니다.");
+    } finally {
+      setIsUpdatingSlackItem(false);
+    }
+  };
+
   const copyReviewPrBranchName = async (pullRequest: ReviewPullRequest) => {
     if (!pullRequest.branchName) {
       return;
@@ -549,7 +641,7 @@ export default function Home() {
 
   const saveDashboardWidgetLayout = (layout: DashboardWidgetLayout[]) => {
     setDashboardWidgetLayout(layout);
-    window.localStorage.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(layout));
+    getBrowserStorage()?.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(layout));
   };
 
   const updateDashboardLayout = (layout: Layout, changedItem?: LayoutItem | null) => {
@@ -717,19 +809,20 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const savedGridLayout = window.localStorage.getItem(dashboardGridStorageKey);
+    const storage = getBrowserStorage();
+    const savedGridLayout = storage?.getItem(dashboardGridStorageKey) ?? null;
     const parsedGridLayout = parseDashboardGridLayout(savedGridLayout);
-    const savedWidgetLayout = window.localStorage.getItem(dashboardWidgetLayoutStorageKey);
+    const savedWidgetLayout = storage?.getItem(dashboardWidgetLayoutStorageKey) ?? null;
     const parsedWidgetLayout = parseDashboardWidgetLayout(savedWidgetLayout);
     setDashboardGridLayoutSetting(parsedGridLayout);
     setDashboardWidgetLayout(parsedWidgetLayout);
 
-    if (savedGridLayout !== serializeDashboardGridLayout(parsedGridLayout)) {
-      window.localStorage.setItem(dashboardGridStorageKey, serializeDashboardGridLayout(parsedGridLayout));
+    if (storage && savedGridLayout !== serializeDashboardGridLayout(parsedGridLayout)) {
+      storage.setItem(dashboardGridStorageKey, serializeDashboardGridLayout(parsedGridLayout));
     }
 
-    if (savedWidgetLayout !== serializeDashboardWidgetLayout(parsedWidgetLayout)) {
-      window.localStorage.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(parsedWidgetLayout));
+    if (storage && savedWidgetLayout !== serializeDashboardWidgetLayout(parsedWidgetLayout)) {
+      storage.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(parsedWidgetLayout));
     }
 
     setIsDashboardLayoutReady(true);
@@ -774,6 +867,39 @@ export default function Home() {
     };
     events.onerror = () => {
       setProjectsStatus("Offline");
+    };
+
+    return () => {
+      events.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    const slackListsUrl = "/api/slack/lists/items";
+    const events = new EventSource(`${slackListsUrl}/events`);
+
+    fetch(slackListsUrl)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Slack Lists failed: ${response.status}`);
+        }
+
+        return response.json() as Promise<SlackListItem[]>;
+      })
+      .then((items) => {
+        setSlackListItems(items);
+        setSlackListsStatus("Live");
+      })
+      .catch(() => {
+        setSlackListsStatus("Offline");
+      });
+
+    events.onmessage = (event) => {
+      setSlackListItems(JSON.parse(event.data) as SlackListItem[]);
+      setSlackListsStatus("Live");
+    };
+    events.onerror = () => {
+      setSlackListsStatus("Offline");
     };
 
     return () => {
@@ -902,6 +1028,10 @@ export default function Home() {
               <span>
                 <i className={isProjectsLive ? "status-dot live" : "status-dot offline"} aria-hidden="true" />
                 Project Status {isProjectsLive ? "Online" : "Offline"}
+              </span>
+              <span>
+                <i className={isSlackListsLive ? "status-dot live" : "status-dot offline"} aria-hidden="true" />
+                Slack Lists {isSlackListsLive ? "Online" : "Offline"}
               </span>
             </div>
           </div>
@@ -1140,6 +1270,56 @@ export default function Home() {
                   설정 바로가기
                   <ArrowUpRight size={18} strokeWidth={1.7} />
                 </Link>
+              </div>
+            </section>
+
+            <section
+              className="dashboard-card"
+              key="slack-lists"
+              aria-labelledby="slack-lists-title"
+            >
+              <div className="card-header">
+                <div>
+                  <p className="eyebrow">Slack</p>
+                  <h2 id="slack-lists-title">Lists</h2>
+                </div>
+                <div className="card-actions">
+                  <Badge className="status-badge" variant="outline">
+                    {slackListItems.length}
+                  </Badge>
+                  {getDashboardWidgetEditControls("slack-lists")}
+                </div>
+              </div>
+              <div className="pr-list">
+                {slackListItems.length === 0 ? (
+                  <>
+                    <p className="card-copy">
+                      {slackListsStatus === "Offline" ? "Slack Lists 연결을 확인하세요." : "동기화된 Slack List item이 없습니다."}
+                    </p>
+                    <Link className="dashboard-card-footer-link" href="/settings/slack">
+                      Slack 설정
+                      <ArrowUpRight size={18} strokeWidth={1.7} />
+                    </Link>
+                  </>
+                ) : (
+                  slackListItems.map((item) => (
+                    <button
+                      className="pr-item slack-list-open-button"
+                      key={item.id}
+                      type="button"
+                      onClick={() => openSlackListItem(item)}
+                    >
+                      <div className="pr-item-main">
+                        <p className="repo">{getSlackSourceLabel(item)}</p>
+                        <h3>{item.title}</h3>
+                        <p className="meta">{getSlackItemSummary(item)}</p>
+                      </div>
+                      <Badge className="status-badge" variant="outline">
+                        {getSlackStatusLabel(item)}
+                      </Badge>
+                    </button>
+                  ))
+                )}
               </div>
             </section>
 
@@ -1516,6 +1696,69 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={selectedSlackListItem !== null} onOpenChange={(open) => !open && setSelectedSlackListItemId(null)}>
+        <DialogContent className="todo-modal slack-list-modal" showCloseButton={false}>
+          {selectedSlackListItem ? (
+            <>
+              <div className="modal-header">
+                <div>
+                  <p className="eyebrow">Slack List</p>
+                  <DialogTitle>{selectedSlackListItem.title}</DialogTitle>
+                  <p className="modal-meta">
+                    {getSlackSourceLabel(selectedSlackListItem)} · {selectedSlackListItem.slackItemId}
+                  </p>
+                </div>
+                <Button
+                  className="icon-button"
+                  type="button"
+                  aria-label="닫기"
+                  title="닫기"
+                  onClick={() => setSelectedSlackListItemId(null)}
+                >
+                  <X size={18} />
+                </Button>
+              </div>
+
+              <div className="slack-field-grid">
+                {selectedSlackDisplayFields.map(([key, field]) => (
+                  <article className="slack-field-item" key={key}>
+                    <span>{field.label}</span>
+                    <strong>{formatSlackFieldValue(field.value) || "-"}</strong>
+                  </article>
+                ))}
+              </div>
+
+              {selectedSlackWritableFields.length > 0 ? (
+                <div className="slack-write-panel">
+                  <h3>Writable fields</h3>
+                  {selectedSlackWritableFields.map(([key, field]) => (
+                    <Label className="field" key={key}>
+                      <span>{field.label}</span>
+                      <Input
+                        value={slackCellDrafts[key] ?? ""}
+                        onChange={(event) => setSlackCellDrafts((drafts) => ({ ...drafts, [key]: event.target.value }))}
+                        placeholder={field.type}
+                      />
+                    </Label>
+                  ))}
+                  <div className="settings-form-footer">
+                    <Button
+                      className="primary-button"
+                      type="button"
+                      disabled={isUpdatingSlackItem}
+                      onClick={() => void updateSlackListItemCells()}
+                    >
+                      {isUpdatingSlackItem ? "저장 중" : "Slack에 저장"}
+                    </Button>
+                    {slackItemMessage ? <p className={slackItemMessage.includes("저장했습니다") ? "success-text" : "danger-text"}>{slackItemMessage}</p> : null}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={selectedProjectStatus !== null} onOpenChange={(open) => !open && setSelectedProjectStatusId(null)}>
         <DialogContent className="health-modal" showCloseButton={false}>
           {selectedProjectStatus?.health ? (
@@ -1659,6 +1902,72 @@ function formatDateTime(date: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatSlackFieldValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(formatSlackFieldValue).filter(Boolean).join(", ");
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+function parseSlackFieldDraft(value: string, type: string): unknown {
+  const draft = value.trim();
+
+  if (type === "user") {
+    return draft
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (type === "checkbox" || type === "completed") {
+    return draft === "true" || draft === "1" || draft === "yes" || draft === "완료";
+  }
+
+  return draft;
+}
+
+function getSlackSourceLabel(item: SlackListItem): string {
+  return typeof item.rawItem.list_id === "string" && item.rawItem.list_id.trim()
+    ? item.rawItem.list_id
+    : `Source #${item.sourceId}`;
+}
+
+function getSlackItemSummary(item: SlackListItem): string {
+  const summary = Object.entries(item.mappedFields)
+    .filter(([key, field]) => key !== "title" && field.display && formatSlackFieldValue(field.value))
+    .slice(0, 3)
+    .map(([, field]) => `${field.label} ${formatSlackFieldValue(field.value)}`)
+    .join(" · ");
+
+  return summary || `동기화 ${formatDateTime(item.lastSeenAt)}`;
+}
+
+function getSlackStatusLabel(item: SlackListItem): string {
+  const status = item.mappedFields.status?.value;
+  return formatSlackFieldValue(status) || "Synced";
+}
+
+function getBrowserStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isSlackListItem(value: SlackListItem | { error?: string } | null): value is SlackListItem {
+  return !!value && typeof value === "object" && "id" in value && "mappedFields" in value;
 }
 
 function formatTime(date: string): string {

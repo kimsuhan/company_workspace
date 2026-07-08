@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:13001";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   output: "standalone",
   async rewrites() {
     return [
@@ -17,6 +18,10 @@ const nextConfig: NextConfig = {
       {
         source: "/api/files/:path*",
         destination: `${backendUrl}/api/files/:path*`,
+      },
+      {
+        source: "/api/slack/:path*",
+        destination: `${backendUrl}/slack/:path*`,
       },
     ];
   },
