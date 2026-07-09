@@ -149,6 +149,7 @@ export const workspaceUsers = pgTable(
     id: serial("id").primaryKey(),
     name: text("name").notNull(),
     slackUserId: text("slack_user_id"),
+    profileImageFileId: integer("profile_image_file_id").references(() => files.id, { onDelete: "set null" }),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

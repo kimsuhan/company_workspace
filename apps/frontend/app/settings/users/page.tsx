@@ -1,7 +1,7 @@
 "use client";
 
-import { Pencil, Plus, Trash2, UserRound } from "lucide-react";
-import type { FormEvent } from "react";
+import { Plus, UserRound } from "lucide-react";
+import type { ChangeEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -13,19 +13,34 @@ type WorkspaceUser = {
   id: number;
   name: string;
   slackUserId: string | null;
+  profileImageFileId: number | null;
+  profileImageUrl: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 };
 
+type UploadedFile = {
+  id: number;
+  originalName: string;
+  publicUrl: string;
+};
+
 const usersUrl = "/api/workspace-users";
+const filesUrl = "/api/files";
+const maxProfileImageBytes = 10_000_000;
 
 export default function SettingsUsersPage() {
   const [users, setUsers] = useState<WorkspaceUser[]>([]);
   const [nameDraft, setNameDraft] = useState("");
   const [slackUserIdDraft, setSlackUserIdDraft] = useState("");
+  const [profileImageFileIdDraft, setProfileImageFileIdDraft] = useState<number | null>(null);
+  const [profileImageUrlDraft, setProfileImageUrlDraft] = useState<string | null>(null);
+  const [profileImageFileName, setProfileImageFileName] = useState("");
+  const [profileImageInputKey, setProfileImageInputKey] = useState(0);
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceUser | null>(null);
+  const [userMenu, setUserMenu] = useState<{ x: number; y: number; userId: number } | null>(null);
   const [isUserFormOpen, setIsUserFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -76,6 +91,7 @@ export default function SettingsUsersPage() {
         body: JSON.stringify({
           name,
           slackUserId: slackUserIdDraft.trim() || null,
+          profileImageFileId: profileImageFileIdDraft,
         }),
       });
       const result = (await response.json().catch(() => null)) as WorkspaceUser | { error?: string } | null;
@@ -121,9 +137,14 @@ export default function SettingsUsersPage() {
   };
 
   const editUser = (user: WorkspaceUser) => {
+    setUserMenu(null);
     setEditingUserId(user.id);
     setNameDraft(user.name);
     setSlackUserIdDraft(user.slackUserId ?? "");
+    setProfileImageFileIdDraft(user.profileImageFileId);
+    setProfileImageUrlDraft(user.profileImageUrl);
+    setProfileImageFileName(user.profileImageUrl ? "현재 프로필 사진" : "");
+    setProfileImageInputKey((value) => value + 1);
     setMessage(null);
     setIsUserFormOpen(true);
   };
@@ -132,6 +153,10 @@ export default function SettingsUsersPage() {
     setEditingUserId(null);
     setNameDraft("");
     setSlackUserIdDraft("");
+    setProfileImageFileIdDraft(null);
+    setProfileImageUrlDraft(null);
+    setProfileImageFileName("");
+    setProfileImageInputKey((value) => value + 1);
   };
 
   const closeUserForm = () => {
@@ -144,8 +169,43 @@ export default function SettingsUsersPage() {
     }
   };
 
+  const readProfileImageFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setMessage("이미지 파일만 등록할 수 있습니다.");
+      event.target.value = "";
+      setProfileImageInputKey((value) => value + 1);
+      return;
+    }
+
+    if (file.size > maxProfileImageBytes) {
+      setMessage("프로필 사진은 10MB 이하로 등록하세요.");
+      event.target.value = "";
+      setProfileImageInputKey((value) => value + 1);
+      return;
+    }
+
+    try {
+      const uploaded = await uploadFile(file);
+
+      setProfileImageFileIdDraft(uploaded.id);
+      setProfileImageUrlDraft(uploaded.publicUrl);
+      setProfileImageFileName(uploaded.originalName);
+      setMessage(null);
+    } catch (error) {
+      setMessage(getErrorMessage(error));
+      event.target.value = "";
+      setProfileImageInputKey((value) => value + 1);
+    }
+  };
+
   return (
-    <div className="settings-layout settings-list-layout">
+    <div className="settings-layout settings-list-layout" onClick={() => setUserMenu(null)}>
       <section className="dashboard-card settings-card" aria-labelledby="workspace-users-title">
         <div className="card-header">
           <div>
@@ -163,34 +223,61 @@ export default function SettingsUsersPage() {
           {!isLoading && message ? <p className="card-copy">{message}</p> : null}
           {!isLoading && !message && users.length === 0 ? <p className="card-copy">등록된 사용자가 없습니다.</p> : null}
           {users.map((user) => (
-            <article className="settings-site-item project-list-item" key={user.id}>
-              <span className="health-logo" aria-hidden="true">
-                <UserRound size={18} />
+            <article
+              className="settings-site-item project-list-item"
+              key={user.id}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setUserMenu({ x: event.clientX, y: event.clientY, userId: user.id });
+              }}
+            >
+              <span className={user.profileImageUrl ? "health-logo profile-image" : "health-logo"} aria-hidden="true">
+                {user.profileImageUrl ? <img src={user.profileImageUrl} alt="" /> : <UserRound size={18} />}
               </span>
               <div className="project-list-main">
                 <strong>{user.name}</strong>
-                <small>{user.slackUserId ?? "Slack User ID 미매핑"}</small>
               </div>
               <div className="health-site-meta">
-                <span className={user.slackUserId ? "health-status healthy" : "health-status"}>
-                  {user.slackUserId ? "Mapped" : "Unmapped"}
-                </span>
                 <small>Updated {formatDateTime(user.updatedAt)}</small>
-              </div>
-              <div className="settings-site-actions">
-                <Button className="secondary-button compact-button" type="button" onClick={() => editUser(user)}>
-                  <Pencil size={14} />
-                  <span>수정</span>
-                </Button>
-                <Button className="danger-button compact-button" type="button" onClick={() => setDeleteTarget(user)}>
-                  <Trash2 size={14} />
-                  <span>삭제</span>
-                </Button>
               </div>
             </article>
           ))}
         </div>
       </section>
+
+      {userMenu ? (
+        <div
+          className="tree-context-menu"
+          style={{ left: userMenu.x, top: userMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {(() => {
+            const user = users.find((item) => item.id === userMenu.userId);
+
+            if (!user) {
+              return null;
+            }
+
+            return (
+              <>
+                <button type="button" onClick={() => editUser(user)}>
+                  수정
+                </button>
+                <button
+                  className="danger"
+                  type="button"
+                  onClick={() => {
+                    setUserMenu(null);
+                    setDeleteTarget(user);
+                  }}
+                >
+                  삭제
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      ) : null}
 
       <Dialog
         open={isUserFormOpen}
@@ -202,7 +289,7 @@ export default function SettingsUsersPage() {
             <div>
               <p className="eyebrow">Workspace User</p>
               <DialogTitle>{editingUserId === null ? "사용자 추가" : "사용자 수정"}</DialogTitle>
-              <p className="modal-meta">관리 대상 직원과 Slack User ID를 1:1로 연결합니다.</p>
+              <p className="modal-meta">관리 대상 직원의 프로필 사진과 Slack User ID를 관리합니다.</p>
             </div>
           </div>
           <form className="settings-form" onSubmit={saveUser}>
@@ -214,6 +301,36 @@ export default function SettingsUsersPage() {
               <span>Slack User ID</span>
               <Input value={slackUserIdDraft} onChange={(event) => setSlackUserIdDraft(event.target.value)} placeholder="U08HELASRED" />
             </Label>
+            <Label className="field">
+              <span>프로필 사진</span>
+              <div className="file-upload-control">
+                <label className="secondary-button compact-button file-picker-button">
+                  파일 선택
+                  <input key={profileImageInputKey} hidden type="file" accept="image/*" onChange={readProfileImageFile} />
+                </label>
+                <span className="file-picker-name">{profileImageFileName || "선택된 파일 없음"}</span>
+              </div>
+            </Label>
+            {profileImageUrlDraft ? (
+              <div className="logo-upload-preview">
+                <span className="health-logo profile-image">
+                  <img src={profileImageUrlDraft} alt="" />
+                </span>
+                <p>{profileImageFileName || "선택된 프로필 사진"}</p>
+                <Button
+                  className="secondary-button compact-button"
+                  type="button"
+                  onClick={() => {
+                    setProfileImageFileIdDraft(null);
+                    setProfileImageUrlDraft(null);
+                    setProfileImageFileName("");
+                    setProfileImageInputKey((value) => value + 1);
+                  }}
+                >
+                  제거
+                </Button>
+              </div>
+            ) : null}
             <div className="settings-form-footer">
               <Button className="primary-button" type="submit" disabled={isSaving || !nameDraft.trim()}>
                 {isSaving ? "저장 중" : editingUserId === null ? "등록" : "수정"}
@@ -266,4 +383,21 @@ function formatDateTime(date: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+async function uploadFile(file: File): Promise<UploadedFile> {
+  const formData = new FormData();
+  formData.set("file", file);
+
+  const response = await fetch(filesUrl, {
+    method: "POST",
+    body: formData,
+  });
+  const result = (await response.json().catch(() => null)) as UploadedFile | { error?: string } | null;
+
+  if (!response.ok || !result || "error" in result) {
+    throw new Error(result && "error" in result ? result.error : `File upload failed: ${response.status}`);
+  }
+
+  return result as UploadedFile;
 }

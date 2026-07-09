@@ -20,6 +20,8 @@ export type WorkspaceUser = {
   id: number;
   name: string;
   slackUserId: string | null;
+  profileImageFileId: number | null;
+  profileImageUrl: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -44,10 +46,15 @@ export type WorkspaceUserStatus = {
 export function readWorkspaceUserInput(input: unknown, current?: WorkspaceUserRow): {
   name: string;
   slackUserId: string | null;
+  profileImageFileId: number | null;
 } {
   const values = readObject(input);
   const name = values.name === undefined ? current?.name : readRequiredString(values.name, "name");
   const slackUserId = values.slackUserId === undefined ? current?.slackUserId ?? null : readSlackUserId(values.slackUserId);
+  const profileImageFileId =
+    values.profileImageFileId === undefined
+      ? current?.profileImageFileId ?? null
+      : readOptionalPositiveInteger(values.profileImageFileId, "profileImageFileId");
 
   if (!name) {
     throw new Error("name is required");
@@ -56,6 +63,7 @@ export function readWorkspaceUserInput(input: unknown, current?: WorkspaceUserRo
   return {
     name,
     slackUserId,
+    profileImageFileId,
   };
 }
 
@@ -109,7 +117,7 @@ export async function updateWorkspaceUser(id: number, input: unknown): Promise<W
 export async function deleteWorkspaceUser(id: number): Promise<boolean> {
   const [row] = await getDb()
     .update(workspaceUsers)
-    .set({ isActive: false, slackUserId: null, updatedAt: new Date() })
+    .set({ isActive: false, slackUserId: null, profileImageFileId: null, updatedAt: new Date() })
     .where(and(eq(workspaceUsers.id, id), eq(workspaceUsers.isActive, true)))
     .returning();
 
@@ -238,6 +246,8 @@ function mapWorkspaceUserRow(row: WorkspaceUserRow): WorkspaceUser {
     id: row.id,
     name: row.name,
     slackUserId: row.slackUserId,
+    profileImageFileId: row.profileImageFileId,
+    profileImageUrl: row.profileImageFileId ? `/api/files/${row.profileImageFileId}` : null,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -306,6 +316,20 @@ function readSlackUserId(value: unknown): string | null {
   }
 
   return slackUserId;
+}
+
+function readOptionalPositiveInteger(value: unknown, field: string): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`${field} must be a positive integer`);
+  }
+
+  return number;
 }
 
 function readRouteId(value: string): number | null {

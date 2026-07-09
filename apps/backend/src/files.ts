@@ -8,7 +8,7 @@ import { and, eq } from "drizzle-orm";
 import cron from "node-cron";
 
 import { getDb } from "./db.js";
-import { files, notes, projectNodes, projects, todoMemos } from "./schema.js";
+import { files, notes, projectNodes, projects, todoMemos, workspaceUsers } from "./schema.js";
 
 const MAX_UPLOAD_FILE_BYTES = 10_000_000;
 const ORPHAN_FILE_GRACE_MS = 60 * 60 * 1000;
@@ -212,11 +212,21 @@ async function collectReferencedFileIds(): Promise<Set<number>> {
   const referencedFileIds = new Set<number>();
   const db = getDb();
   const activeProjects = await db.select({ id: projects.id, logoFileId: projects.logoFileId }).from(projects).where(eq(projects.isActive, true));
+  const activeUsers = await db
+    .select({ profileImageFileId: workspaceUsers.profileImageFileId })
+    .from(workspaceUsers)
+    .where(eq(workspaceUsers.isActive, true));
   const activeProjectIds = new Set(activeProjects.map((project) => project.id));
 
   for (const project of activeProjects) {
     if (project.logoFileId) {
       referencedFileIds.add(project.logoFileId);
+    }
+  }
+
+  for (const user of activeUsers) {
+    if (user.profileImageFileId) {
+      referencedFileIds.add(user.profileImageFileId);
     }
   }
 

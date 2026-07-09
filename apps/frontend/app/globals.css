@@ -1280,6 +1280,17 @@ body {
   height: 30px;
 }
 
+.health-logo.profile-image {
+  overflow: hidden;
+  background: #0d0d0d;
+}
+
+.health-logo.profile-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .health-site-main,
 .health-site-meta {
   min-width: 0;

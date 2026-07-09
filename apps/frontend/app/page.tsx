@@ -139,6 +139,8 @@ type WorkspaceUser = {
   id: number;
   name: string;
   slackUserId: string | null;
+  profileImageFileId: number | null;
+  profileImageUrl: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -1414,8 +1416,8 @@ export default function Home() {
                 ) : (
                   workspaceUserStatuses.map((item) => (
                     <article className={`workspace-user-status-item ${item.status}`} key={item.user.id}>
-                      <span className="health-logo" aria-hidden="true">
-                        <UserRound size={17} />
+                      <span className={item.user.profileImageUrl ? "health-logo profile-image" : "health-logo"} aria-hidden="true">
+                        {item.user.profileImageUrl ? <img src={item.user.profileImageUrl} alt="" /> : <UserRound size={17} />}
                       </span>
                       <div className="workspace-user-status-main">
                         <div className="workspace-user-status-title">
