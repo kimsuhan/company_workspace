@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ne } from "drizzle-orm";
 
 import { getDb } from "./db.js";
 import {
@@ -22,6 +22,7 @@ export type WorkspaceUser = {
   slackUserId: string | null;
   profileImageFileId: number | null;
   profileImageUrl: string | null;
+  isMe: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -47,6 +48,7 @@ export function readWorkspaceUserInput(input: unknown, current?: WorkspaceUserRo
   name: string;
   slackUserId: string | null;
   profileImageFileId: number | null;
+  isMe: boolean;
 } {
   const values = readObject(input);
   const name = values.name === undefined ? current?.name : readRequiredString(values.name, "name");
@@ -55,6 +57,7 @@ export function readWorkspaceUserInput(input: unknown, current?: WorkspaceUserRo
     values.profileImageFileId === undefined
       ? current?.profileImageFileId ?? null
       : readOptionalPositiveInteger(values.profileImageFileId, "profileImageFileId");
+  const isMe = values.isMe === undefined ? current?.isMe ?? false : readBoolean(values.isMe, "isMe");
 
   if (!name) {
     throw new Error("name is required");
@@ -64,6 +67,7 @@ export function readWorkspaceUserInput(input: unknown, current?: WorkspaceUserRo
     name,
     slackUserId,
     profileImageFileId,
+    isMe,
   };
 }
 
@@ -90,12 +94,13 @@ export async function listWorkspaceUsers(): Promise<WorkspaceUser[]> {
 
 export async function createWorkspaceUser(input: unknown): Promise<WorkspaceUser> {
   const now = new Date();
+  const values = readWorkspaceUserInput(input);
   const [row] = await getDb()
     .insert(workspaceUsers)
-    .values({ ...readWorkspaceUserInput(input), isActive: true, createdAt: now, updatedAt: now })
+    .values({ ...values, isMe: false, isActive: true, createdAt: now, updatedAt: now })
     .returning();
 
-  return mapWorkspaceUserRow(row);
+  return values.isMe ? await setWorkspaceUserAsMe(row.id) : mapWorkspaceUserRow(row);
 }
 
 export async function updateWorkspaceUser(id: number, input: unknown): Promise<WorkspaceUser | undefined> {
@@ -105,13 +110,18 @@ export async function updateWorkspaceUser(id: number, input: unknown): Promise<W
     return undefined;
   }
 
+  const values = readWorkspaceUserInput(input, current);
   const [row] = await getDb()
     .update(workspaceUsers)
-    .set({ ...readWorkspaceUserInput(input, current), updatedAt: new Date() })
+    .set({ ...values, updatedAt: new Date() })
     .where(and(eq(workspaceUsers.id, id), eq(workspaceUsers.isActive, true)))
     .returning();
 
-  return row ? mapWorkspaceUserRow(row) : undefined;
+  if (!row) {
+    return undefined;
+  }
+
+  return values.isMe ? await setWorkspaceUserAsMe(id) : mapWorkspaceUserRow(row);
 }
 
 export async function deleteWorkspaceUser(id: number): Promise<boolean> {
@@ -248,10 +258,28 @@ function mapWorkspaceUserRow(row: WorkspaceUserRow): WorkspaceUser {
     slackUserId: row.slackUserId,
     profileImageFileId: row.profileImageFileId,
     profileImageUrl: row.profileImageFileId ? `/api/files/${row.profileImageFileId}` : null,
+    isMe: row.isMe,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function setWorkspaceUserAsMe(id: number): Promise<WorkspaceUser> {
+  const now = new Date();
+
+  await getDb()
+    .update(workspaceUsers)
+    .set({ isMe: false, updatedAt: now })
+    .where(and(eq(workspaceUsers.isActive, true), eq(workspaceUsers.isMe, true), ne(workspaceUsers.id, id)));
+
+  const [row] = await getDb()
+    .update(workspaceUsers)
+    .set({ isMe: true, updatedAt: now })
+    .where(and(eq(workspaceUsers.id, id), eq(workspaceUsers.isActive, true)))
+    .returning();
+
+  return mapWorkspaceUserRow(row);
 }
 
 async function getActiveWorkspaceUser(id: number): Promise<WorkspaceUserRow | undefined> {
@@ -330,6 +358,14 @@ function readOptionalPositiveInteger(value: unknown, field: string): number | nu
   }
 
   return number;
+}
+
+function readBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`${field} must be a boolean`);
+  }
+
+  return value;
 }
 
 function readRouteId(value: string): number | null {

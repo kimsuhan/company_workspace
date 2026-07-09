@@ -4,6 +4,7 @@ import { Plus, UserRound } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useEffect, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ type WorkspaceUser = {
   slackUserId: string | null;
   profileImageFileId: number | null;
   profileImageUrl: string | null;
+  isMe: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -38,6 +40,7 @@ export default function SettingsUsersPage() {
   const [profileImageUrlDraft, setProfileImageUrlDraft] = useState<string | null>(null);
   const [profileImageFileName, setProfileImageFileName] = useState("");
   const [profileImageInputKey, setProfileImageInputKey] = useState(0);
+  const [isMeDraft, setIsMeDraft] = useState(false);
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceUser | null>(null);
   const [userMenu, setUserMenu] = useState<{ x: number; y: number; userId: number } | null>(null);
@@ -92,6 +95,7 @@ export default function SettingsUsersPage() {
           name,
           slackUserId: slackUserIdDraft.trim() || null,
           profileImageFileId: profileImageFileIdDraft,
+          isMe: isMeDraft,
         }),
       });
       const result = (await response.json().catch(() => null)) as WorkspaceUser | { error?: string } | null;
@@ -145,6 +149,7 @@ export default function SettingsUsersPage() {
     setProfileImageUrlDraft(user.profileImageUrl);
     setProfileImageFileName(user.profileImageUrl ? "현재 프로필 사진" : "");
     setProfileImageInputKey((value) => value + 1);
+    setIsMeDraft(user.isMe);
     setMessage(null);
     setIsUserFormOpen(true);
   };
@@ -157,6 +162,7 @@ export default function SettingsUsersPage() {
     setProfileImageUrlDraft(null);
     setProfileImageFileName("");
     setProfileImageInputKey((value) => value + 1);
+    setIsMeDraft(false);
   };
 
   const closeUserForm = () => {
@@ -238,6 +244,7 @@ export default function SettingsUsersPage() {
                 <strong>{user.name}</strong>
               </div>
               <div className="health-site-meta">
+                {user.isMe ? <Badge className="status-badge" variant="outline">나</Badge> : null}
                 <small>Updated {formatDateTime(user.updatedAt)}</small>
               </div>
             </article>
@@ -301,6 +308,14 @@ export default function SettingsUsersPage() {
               <span>Slack User ID</span>
               <Input value={slackUserIdDraft} onChange={(event) => setSlackUserIdDraft(event.target.value)} placeholder="U08HELASRED" />
             </Label>
+            <label className="switch-field">
+              <span>
+                <strong>나</strong>
+                <small>이 사용자를 내 프로필로 표시합니다.</small>
+              </span>
+              <input type="checkbox" checked={isMeDraft} onChange={(event) => setIsMeDraft(event.target.checked)} />
+              <i aria-hidden="true" />
+            </label>
             <Label className="field">
               <span>프로필 사진</span>
               <div className="file-upload-control">

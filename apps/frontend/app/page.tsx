@@ -148,6 +148,7 @@ type WorkspaceUser = {
   slackUserId: string | null;
   profileImageFileId: number | null;
   profileImageUrl: string | null;
+  isMe: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

@@ -11,15 +11,18 @@ test("readWorkspaceUserInput requires name and normalizes optional Slack user ID
     name: "김수한",
     slackUserId: "U08HELASRED",
     profileImageFileId: null,
+    isMe: false,
   });
-  assert.deepEqual(readWorkspaceUserInput({ name: "김수한", slackUserId: "", profileImageFileId: 42 }), {
+  assert.deepEqual(readWorkspaceUserInput({ name: "김수한", slackUserId: "", profileImageFileId: 42, isMe: true }), {
     name: "김수한",
     slackUserId: null,
     profileImageFileId: 42,
+    isMe: true,
   });
   assert.throws(() => readWorkspaceUserInput({ name: "" }), /name is required/);
   assert.throws(() => readWorkspaceUserInput({ name: "김수한", slackUserId: "kim" }), /slackUserId must be a Slack user ID/);
   assert.throws(() => readWorkspaceUserInput({ name: "김수한", profileImageFileId: -1 }), /profileImageFileId must be a positive integer/);
+  assert.throws(() => readWorkspaceUserInput({ name: "김수한", isMe: "true" }), /isMe must be a boolean/);
 });
 
 test("getWorkspaceUserSaveErrorMessage handles Slack user ID uniqueness", () => {

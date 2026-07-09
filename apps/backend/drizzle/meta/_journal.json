@@ -113,6 +113,13 @@
       "when": 1783591200000,
       "tag": "0015_workspace_user_profile_image",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1783594800000,
+      "tag": "0016_workspace_user_is_me",
+      "breakpoints": true
     }
   ]
 }
