@@ -138,6 +138,7 @@ type SlackMappedField = {
   display: boolean;
   writable: boolean;
   columnId: string | null;
+  dashboardValues?: string[];
   role?: "assignee" | "status" | "title" | "done" | "none";
   userIds?: string[];
 };
@@ -282,6 +283,7 @@ export default function Home() {
   const selectedSlackWritableFields = selectedSlackListItem
     ? Object.entries(selectedSlackListItem.mappedFields).filter(([, field]) => field.writable)
     : [];
+  const dashboardSlackListItems = slackListItems.filter(shouldShowSlackListItemOnDashboard);
   const todoGroups = projects
     .map((project) => ({
       project,
@@ -1402,16 +1404,16 @@ export default function Home() {
                 </div>
                 <div className="card-actions">
                   <Badge className="status-badge" variant="outline">
-                    {slackListItems.length}
+                    {dashboardSlackListItems.length}
                   </Badge>
                   {getDashboardWidgetEditControls("slack-lists")}
                 </div>
               </div>
               <div className="pr-list">
-                {slackListItems.length === 0 ? (
+                {dashboardSlackListItems.length === 0 ? (
                   <>
                     <p className="card-copy">
-                      {slackListsStatus === "Offline" ? "Slack Lists 연결을 확인하세요." : "동기화된 Slack List item이 없습니다."}
+                      {slackListsStatus === "Offline" ? "Slack Lists 연결을 확인하세요." : "대시보드에 표시할 Slack List item이 없습니다."}
                     </p>
                     <Link className="dashboard-card-footer-link" href="/settings/slack">
                       Slack 설정
@@ -1419,7 +1421,7 @@ export default function Home() {
                     </Link>
                   </>
                 ) : (
-                  slackListItems.map((item) => (
+                  dashboardSlackListItems.map((item) => (
                     <button
                       className="pr-item slack-list-open-button"
                       key={item.id}
@@ -2148,6 +2150,19 @@ function getSlackStatusLabel(item: SlackListItem): string {
   const statusKey = item.fieldRoles?.status ?? "status";
   const status = item.mappedFields[statusKey]?.value;
   return formatSlackFieldValue(status) || "Synced";
+}
+
+function shouldShowSlackListItemOnDashboard(item: SlackListItem): boolean {
+  const statusKey = item.fieldRoles?.status;
+  const statusField = statusKey ? item.mappedFields[statusKey] : undefined;
+  const dashboardValues = statusField?.dashboardValues ?? [];
+
+  if (dashboardValues.length === 0) {
+    return true;
+  }
+
+  const values = Array.isArray(statusField?.value) ? statusField.value : [statusField?.value];
+  return values.some((value) => typeof value === "string" && dashboardValues.includes(value));
 }
 
 function getBrowserStorage(): Storage | null {

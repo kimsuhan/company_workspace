@@ -33,6 +33,7 @@ type FieldMappingDraft = {
   type: string;
   sampleValue?: string;
   optionLabels?: Record<string, string>;
+  dashboardValues?: string[];
   inProgressValues?: string[];
   doneValues?: string[];
   display: boolean;
@@ -61,7 +62,7 @@ const fieldRoleOptions: { value: FieldRole; label: string }[] = [
 ];
 const defaultFieldMappings: FieldMappingDraft[] = [
   { id: "field-title", key: "title", columnId: "Col...", type: "text", label: "제목", sampleValue: "", display: true, writable: false, role: "title" },
-  { id: "field-status", key: "status", columnId: "Col...", type: "select", label: "상태", sampleValue: "", display: true, writable: true, role: "status" },
+  { id: "field-status", key: "status", columnId: "Col...", type: "select", label: "상태", sampleValue: "", dashboardValues: ["미분류"], display: true, writable: true, role: "status" },
   { id: "field-assignee", key: "assignee", columnId: "Col...", type: "user", label: "담당자", sampleValue: "", display: true, writable: false, role: "assignee" },
 ];
 const defaultFilterRules: FilterDraft[] = [
@@ -748,6 +749,7 @@ export default function SettingsSlackPage() {
                     const selectedField = fieldMappingDraft.find((field) => field.id === selectedFieldId);
                     const filteredStatusValues = selectedField ? getFilteredStatusValues(filterConfigDraft, selectedField) : [];
                     const allowedStatusValues = filteredStatusValues.length > 0 ? filteredStatusValues : Object.values(selectedField?.optionLabels ?? {});
+                    const selectedDashboardValues = (selectedField?.dashboardValues ?? []).filter((value) => filteredStatusValues.length === 0 || filteredStatusValues.includes(value));
                     const selectedInProgressValues = (selectedField?.inProgressValues ?? []).filter((value) => filteredStatusValues.length === 0 || filteredStatusValues.includes(value));
                     const selectedDoneValues = (selectedField?.doneValues ?? []).filter((value) => filteredStatusValues.length === 0 || filteredStatusValues.includes(value));
                     const selectOptions = toSelectOptions(allowedStatusValues);
@@ -767,6 +769,21 @@ export default function SettingsSlackPage() {
                         </label>
                         {option.value === "status" && selectedField && selectOptions.length > 0 ? (
                           <>
+                            <div className="slack-role-mapping-row">
+                              <span>대시보드 표시 상태</span>
+                              <OptionMultiSelect
+                                options={selectOptions}
+                                placeholder="대시보드에 보일 상태 선택"
+                                value={selectedDashboardValues}
+                                onChange={(values) =>
+                                  setFieldMappingDraft((rows) =>
+                                    updateRow(rows, selectedField.id, {
+                                      dashboardValues: values.length > 0 ? values : undefined,
+                                    }),
+                                  )
+                                }
+                              />
+                            </div>
                             <div className="slack-role-mapping-row">
                               <span>진행중 상태</span>
                               <OptionMultiSelect
@@ -969,13 +986,20 @@ function updateRow<T extends { id: string }>(rows: T[], id: string, patch: Parti
 function updateFieldRole(rows: FieldMappingDraft[], id: string, role: FieldRole): FieldMappingDraft[] {
   return rows.map((row) => {
     if (role !== "none" && row.role === role && row.id !== id) {
-      return { ...row, role: "none", inProgressValues: role === "status" ? undefined : row.inProgressValues, doneValues: role === "status" ? undefined : row.doneValues };
+      return {
+        ...row,
+        role: "none",
+        dashboardValues: role === "status" ? undefined : row.dashboardValues,
+        inProgressValues: role === "status" ? undefined : row.inProgressValues,
+        doneValues: role === "status" ? undefined : row.doneValues,
+      };
     }
 
     return row.id === id
       ? {
           ...row,
           role,
+          dashboardValues: role === "status" ? row.dashboardValues : undefined,
           inProgressValues: role === "status" ? row.inProgressValues : undefined,
           doneValues: role === "status" ? row.doneValues : undefined,
         }
@@ -1028,6 +1052,7 @@ function limitStatusRoleValues(field: FieldMappingDraft, filters: FilterDraft[])
     ...field,
     inProgressValues: field.inProgressValues?.filter((value) => allowedValues.includes(value)),
     doneValues: field.doneValues?.filter((value) => allowedValues.includes(value)),
+    dashboardValues: field.dashboardValues?.filter((value) => allowedValues.includes(value)),
   };
 }
 
@@ -1046,6 +1071,7 @@ function mappingToDraftRows(value: Record<string, unknown>): FieldMappingDraft[]
         label: typeof field.label === "string" ? field.label : key,
         sampleValue: typeof field.sampleValue === "string" ? field.sampleValue : "",
         optionLabels: readOptionLabels(field.optionLabels),
+        dashboardValues: readStringList(field.dashboardValues),
         inProgressValues: readStringList(field.inProgressValues),
         doneValues: readStringList(field.doneValues),
         display: field.display !== false,

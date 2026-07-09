@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   applyCsvHeadersToFieldPreviews,
+  applySlackDashboardValuesToMappedFields,
   applySlackListSchemaToFieldPreviews,
   buildSlackUpdateCells,
   getAssignedSlackUserIds,
@@ -30,6 +31,7 @@ const mapping: Record<string, SlackListFieldMapping> = {
     type: "select",
     label: "상태",
     optionLabels: { OptStatusTodo: "미분류", OptStatusApi: "API 작업중" },
+    dashboardValues: ["미분류"],
     display: true,
     writable: true,
   },
@@ -54,6 +56,7 @@ test("mapSlackItemToMappedFields prefers column_id and extracts display values",
 
   assert.equal(fields.title.value, "업무위탁수수료 지급관련");
   assert.equal(fields.status.value, "미분류");
+  assert.deepEqual(fields.status.dashboardValues, ["미분류"]);
   assert.equal(fields.assignee.value, "김수한");
 });
 
@@ -76,6 +79,14 @@ test("matchesSlackListFilter supports eq, in, contains, and exists", () => {
     true,
   );
   assert.equal(matchesSlackListFilter(fields, { all: [{ field: "status", op: "eq", value: "완료" }] }), false);
+});
+
+test("applySlackDashboardValuesToMappedFields adds dashboard status settings to existing synced fields", () => {
+  const fields: Record<string, SlackMappedField> = {
+    status: { label: "상태", value: "API 작업중", type: "select", display: true, writable: true, columnId: "ColStatus" },
+  };
+
+  assert.deepEqual(applySlackDashboardValuesToMappedFields(fields, mapping).status.dashboardValues, ["미분류"]);
 });
 
 test("buildSlackUpdateCells only builds writable mapped cell updates", () => {
@@ -121,6 +132,7 @@ test("readSlackListSourceInput converts UI rows to stored JSON config", () => {
         type: "select",
         sampleValue: "API 작업중",
         optionLabels: { OptStatusApi: "API 작업중" },
+        dashboardValues: ["미분류"],
         inProgressValues: ["API 작업중"],
         doneValues: ["처리완료"],
         display: true,
@@ -141,6 +153,7 @@ test("readSlackListSourceInput converts UI rows to stored JSON config", () => {
       label: "상태",
       sampleValue: "API 작업중",
       optionLabels: { OptStatusApi: "API 작업중" },
+      dashboardValues: ["미분류"],
       inProgressValues: ["API 작업중"],
       doneValues: ["처리완료"],
       display: true,

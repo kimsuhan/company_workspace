@@ -44,6 +44,7 @@ Each field mapping is stored as JSON so the backend can keep dynamic behavior wh
       "Opt03": "처리완료"
     },
     "role": "status",
+    "dashboardValues": ["미분류"],
     "inProgressValues": ["API 작업중"],
     "doneValues": ["처리완료"],
     "display": true,
@@ -58,6 +59,7 @@ Each field mapping is stored as JSON so the backend can keep dynamic behavior wh
 - `sampleValue`: preview-only value for Settings UI. It helps users recognize the field when editing later and is not used for filtering or writes.
 - `optionLabels`: optional select option ID-to-label map from Slack schema. Settings UI uses these labels when users configure filters and status values.
 - `role`: optional dashboard role. Supported values are `title`, `assignee`, `status`, and `none`. One Slack List source keeps only one field per role.
+- `dashboardValues`: optional status labels shown in the dashboard Slack Lists card only. It must not remove synced local items.
 - `inProgressValues`: optional status labels treated as active work when `role` is `status`.
 - `doneValues`: optional status labels treated as completed work when `role` is `status`.
 - `display`: whether the field appears in dashboard cards and item detail.
@@ -87,4 +89,5 @@ Each field mapping is stored as JSON so the backend can keep dynamic behavior wh
 - Manual field creation sits at the bottom of the field list as a full-width `+` button.
 - The settings form order is field mapping, filters, then dashboard connection.
 - Dashboard connection maps `title`, `assignee`, and `status` to Slack fields. Status value pickers for in-progress and done states should use the status filter values when a status `in` filter exists; otherwise they may use all mapped select labels.
+- Dashboard display status is separate from filters: filters decide what gets synced locally, while dashboard status decides which synced items appear in the dashboard card.
 - Help for finding list IDs or column IDs appears as a small circular `?` icon beside the relevant label.

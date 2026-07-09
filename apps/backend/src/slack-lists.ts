@@ -16,6 +16,7 @@ export type SlackListFieldMapping = {
   label?: string;
   sampleValue?: string;
   optionLabels?: Record<string, string>;
+  dashboardValues?: string[];
   inProgressValues?: string[];
   doneValues?: string[];
   display?: boolean;
@@ -30,6 +31,7 @@ export type SlackMappedField = {
   display: boolean;
   writable: boolean;
   columnId: string | null;
+  dashboardValues?: string[];
   role?: SlackListFieldRole;
   userIds?: string[];
 };
@@ -224,12 +226,25 @@ export function mapSlackItemToMappedFields(
       display: config.display !== false,
       writable: config.writable === true,
       columnId: config.columnId ?? field?.column_id ?? null,
+      ...(config.dashboardValues && config.dashboardValues.length > 0 ? { dashboardValues: config.dashboardValues } : {}),
       ...(role === "none" ? {} : { role }),
       ...(userIds.length > 0 ? { userIds } : {}),
     };
   }
 
   return mapped;
+}
+
+export function applySlackDashboardValuesToMappedFields(
+  fields: Record<string, SlackMappedField>,
+  mapping: Record<string, SlackListFieldMapping>,
+): Record<string, SlackMappedField> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, field]) => {
+      const dashboardValues = mapping[key]?.dashboardValues;
+      return [key, dashboardValues && dashboardValues.length > 0 ? { ...field, dashboardValues } : field];
+    }),
+  );
 }
 
 export function matchesSlackListFilter(fields: Record<string, { value: unknown }>, filter: SlackListFilter): boolean {
@@ -1053,8 +1068,9 @@ function mapSlackListItemRow(
   source?: SlackListSourceRow,
   userBySlackId: Map<string, WorkspaceUserRow> = new Map(),
 ) {
-  const mappedFields = row.mappedFields as Record<string, SlackMappedField>;
+  const storedFields = row.mappedFields as Record<string, SlackMappedField>;
   const mapping = source ? readMappingConfig(source.fieldMapping) : undefined;
+  const mappedFields = mapping ? applySlackDashboardValuesToMappedFields(storedFields, mapping) : storedFields;
   const fieldRoles = getSlackFieldRoles(mappedFields, mapping);
   const assignedUsers = getAssignedSlackUserIds(mappedFields, mapping)
     .flatMap((slackUserId) => {
@@ -1481,6 +1497,7 @@ export function readMappingConfig(value: unknown): Record<string, SlackListField
     const field = config as Record<string, unknown>;
     const role = readMappingRole(field.role, usedRoles);
     const optionLabels = readOptionLabels(field.optionLabels);
+    const dashboardValues = readStringList(field.dashboardValues);
     const inProgressValues = readStringList(field.inProgressValues);
     const doneValues = readStringList(field.doneValues);
     mapping[key] = {
@@ -1490,6 +1507,7 @@ export function readMappingConfig(value: unknown): Record<string, SlackListField
       label: typeof field.label === "string" ? field.label.trim() : key,
       sampleValue: typeof field.sampleValue === "string" ? field.sampleValue.trim() : undefined,
       ...(optionLabels ? { optionLabels } : {}),
+      ...(dashboardValues ? { dashboardValues } : {}),
       ...(inProgressValues ? { inProgressValues } : {}),
       ...(doneValues ? { doneValues } : {}),
       display: field.display !== false,
@@ -1523,6 +1541,7 @@ function readMappingRows(value: unknown): Record<string, SlackListFieldMapping> 
 
     const role = readMappingRole(item.role, usedRoles);
     const optionLabels = readOptionLabels(item.optionLabels);
+    const dashboardValues = readStringList(item.dashboardValues);
     const inProgressValues = readStringList(item.inProgressValues);
     const doneValues = readStringList(item.doneValues);
     mapping[key] = {
@@ -1531,6 +1550,7 @@ function readMappingRows(value: unknown): Record<string, SlackListFieldMapping> 
       label: typeof item.label === "string" && item.label.trim() ? item.label.trim() : key,
       sampleValue: typeof item.sampleValue === "string" ? item.sampleValue.trim() : undefined,
       ...(optionLabels ? { optionLabels } : {}),
+      ...(dashboardValues ? { dashboardValues } : {}),
       ...(inProgressValues ? { inProgressValues } : {}),
       ...(doneValues ? { doneValues } : {}),
       display: item.display !== false,
