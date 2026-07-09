@@ -90,4 +90,5 @@ Each field mapping is stored as JSON so the backend can keep dynamic behavior wh
 - The settings form order is field mapping, filters, then dashboard connection.
 - Dashboard connection maps `title`, `assignee`, and `status` to Slack fields. Status value pickers for in-progress and done states should use the status filter values when a status `in` filter exists; otherwise they may use all mapped select labels.
 - Dashboard display status is separate from filters: filters decide what gets synced locally, while dashboard status decides which synced items appear in the dashboard card.
+- Existing synced item responses should apply the current source mapping's display-only settings such as `dashboardValues` instead of relying only on the stored item snapshot.
 - Help for finding list IDs or column IDs appears as a small circular `?` icon beside the relevant label.
