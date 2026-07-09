@@ -18,10 +18,11 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import { GridLayout, useContainerWidth } from "react-grid-layout";
-import { absoluteStrategy } from "react-grid-layout/core";
-import type { Layout, LayoutItem } from "react-grid-layout";
+import { absoluteStrategy, getCompactor } from "react-grid-layout/core";
+import type { Layout } from "react-grid-layout";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,19 +33,25 @@ import { Label } from "@/components/ui/label";
 
 import { RichTextEditor } from "./rich-text-editor";
 import {
+  arrangeDashboardWidgetLayout,
+  dashboardGaplessWidgetLayoutStorageKey,
+  dashboardGridDotSize,
+  dashboardLegacyWidgetLayoutStorageKey,
+  dashboardPreviousWidgetLayoutStorageKey,
+  dashboardTightWidgetLayoutStorageKey,
   dashboardWidgetLayoutStorageKey,
   dashboardWidgetMaxRows,
-  defaultDashboardWidgetLayout,
-  dashboardGridStorageKey,
-  defaultDashboardGridLayout,
-  isDashboardWidgetId,
+  getDashboardDotGridColumns,
+  getInvalidDashboardWidgetIds,
+  migrateGaplessDashboardWidgetLayout,
+  migrateLegacyDashboardWidgetLayout,
+  migrateTightDashboardWidgetLayout,
   normalizeDashboardWidgetLayout,
-  parseDashboardGridLayout,
   parseDashboardWidgetLayout,
-  serializeDashboardGridLayout,
   serializeDashboardWidgetLayout,
+  validateDashboardWidgetLayout,
 } from "./dashboard-grid-settings";
-import type { DashboardGridLayout, DashboardWidgetId, DashboardWidgetLayout } from "./dashboard-grid-settings";
+import type { DashboardWidgetId, DashboardWidgetLayout } from "./dashboard-grid-settings";
 import {
   findNewActiveReviewPullRequests,
   findNewlyUnhealthySites,
@@ -204,6 +211,7 @@ type ReviewPrContextMenu = {
 };
 
 const todoColorPresets = ["#1c69d4", "#8b5cf6", "#e22718", "#f4b400", "#0fa336", "#7e7e7e"];
+const dashboardGridCompactor = getCompactor(null, false, true);
 
 export default function Home() {
   const [reviewPullRequests, setReviewPullRequests] = useState<ReviewPullRequest[]>([]);
@@ -244,10 +252,11 @@ export default function Home() {
   const [reviewPrContextMenu, setReviewPrContextMenu] = useState<ReviewPrContextMenu | null>(null);
   const [selectedProjectStatusId, setSelectedProjectStatusId] = useState<number | null>(null);
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenu | null>(null);
-  const [dashboardGridLayoutSetting, setDashboardGridLayoutSetting] = useState<DashboardGridLayout>(defaultDashboardGridLayout);
-  const [dashboardWidgetLayout, setDashboardWidgetLayout] = useState<DashboardWidgetLayout[]>(defaultDashboardWidgetLayout);
+  const [dashboardWidgetLayout, setDashboardWidgetLayout] = useState<DashboardWidgetLayout[]>([]);
+  const [dashboardInvalidWidgetIds, setDashboardInvalidWidgetIds] = useState<DashboardWidgetId[]>([]);
+  const [dashboardInvalidPulse, setDashboardInvalidPulse] = useState(0);
   const [isDashboardEditing, setIsDashboardEditing] = useState(false);
-  const [isDashboardLayoutReady, setIsDashboardLayoutReady] = useState(true);
+  const [isDashboardLayoutReady, setIsDashboardLayoutReady] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const { containerRef: dashboardGridRef, mounted: isDashboardGridMeasured, width: dashboardGridWidth } = useContainerWidth();
   const healthChartRef = useRef<HTMLCanvasElement | null>(null);
@@ -255,6 +264,7 @@ export default function Home() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const reviewPullRequestBaselineRef = useRef<Set<number> | null>(null);
   const projectStatusBaselineRef = useRef<Map<number, ProjectHealth["status"]> | null>(null);
+  const hasLoadedDashboardLayoutRef = useRef(false);
 
   const selectedTodo = todoMemos.find((memo) => memo.id === selectedTodoId);
   const todoContextTarget = todoMemos.find((memo) => memo.id === todoContextMenu?.todoId) ?? null;
@@ -287,11 +297,16 @@ export default function Home() {
   const isWorkspaceUsersLive = workspaceUsersStatus === "Live";
   const liveServiceCount = [isReviewPrsLive, isTodoLive, isNotesLive, isProjectsLive, isSlackListsLive, isWorkspaceUsersLive].filter(Boolean).length;
   const liveSummaryLabel = liveServiceCount === 6 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
-  const effectiveDashboardGridSize = isDashboardGridMeasured && dashboardGridWidth < 860 ? 1 : dashboardGridLayoutSetting.cols;
+  const effectiveDashboardGridSize = isDashboardGridMeasured ? getDashboardDotGridColumns(dashboardGridWidth) : 1;
+  const dashboardGridPixelWidth = effectiveDashboardGridSize * dashboardGridDotSize;
   const isDashboardGridReady = isDashboardLayoutReady && isDashboardGridMeasured && dashboardGridWidth > 0;
-  const dashboardGridRowHeight = effectiveDashboardGridSize === 1 ? 260 : 220;
-  const dashboardGridEditMinHeight =
-    dashboardGridLayoutSetting.rows * dashboardGridRowHeight + Math.max(0, dashboardGridLayoutSetting.rows - 1) * 16;
+  const dashboardGridStyle =
+    isDashboardEditing
+      ? ({
+          "--dashboard-grid-column-step": `${dashboardGridDotSize}px`,
+          "--dashboard-grid-row-step": `${dashboardGridDotSize}px`,
+        } as CSSProperties)
+      : undefined;
   const dashboardGridLayout: Layout = [
     ...dashboardWidgetLayout.map((widget) => {
       const width = Math.min(widget.w, effectiveDashboardGridSize);
@@ -301,7 +316,7 @@ export default function Home() {
         x: Math.min(widget.x, effectiveDashboardGridSize - width),
         y: widget.y,
         w: width,
-        h: Math.min(widget.h, effectiveDashboardGridSize),
+        h: Math.min(widget.h, dashboardWidgetMaxRows),
         minW: 1,
         minH: 1,
         maxW: effectiveDashboardGridSize,
@@ -680,25 +695,45 @@ export default function Home() {
     getBrowserStorage()?.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(layout));
   };
 
-  const updateDashboardLayout = (layout: Layout, changedItem?: LayoutItem | null) => {
-    if (effectiveDashboardGridSize !== dashboardGridLayoutSetting.cols) {
+  const updateDashboardLayout = (layout: Layout) => {
+    const nextLayout = validateDashboardWidgetLayout(layout, effectiveDashboardGridSize);
+
+    if (nextLayout) {
+      setDashboardInvalidWidgetIds([]);
+      saveDashboardWidgetLayout(nextLayout);
+    } else {
+      setDashboardInvalidWidgetIds(getInvalidDashboardWidgetIds(layout, effectiveDashboardGridSize));
+      setDashboardInvalidPulse((value) => value + 1);
+      setDashboardWidgetLayout((currentLayout) => [...currentLayout]);
+    }
+  };
+
+  const arrangeDashboardLayout = () => {
+    setDashboardInvalidWidgetIds([]);
+    saveDashboardWidgetLayout(arrangeDashboardWidgetLayout(dashboardWidgetLayout, effectiveDashboardGridSize));
+  };
+
+  const toggleDashboardEditing = () => {
+    if (!isDashboardEditing) {
+      setDashboardInvalidWidgetIds([]);
+      setIsDashboardEditing(true);
       return;
     }
 
-    const nextLayout =
-      changedItem && isDashboardWidgetId(changedItem.i)
-        ? dashboardWidgetLayout.map((widget) =>
-            widget.id === changedItem.i
-              ? { i: widget.id, x: changedItem.x, y: changedItem.y, w: changedItem.w, h: changedItem.h }
-              : { i: widget.id, x: widget.x, y: widget.y, w: widget.w, h: widget.h },
-          )
-        : layout;
+    if (dashboardInvalidWidgetIds.length > 0) {
+      setDashboardInvalidPulse((value) => value + 1);
+      return;
+    }
 
-    saveDashboardWidgetLayout(normalizeDashboardWidgetLayout(nextLayout, dashboardGridLayoutSetting.cols));
+    setIsDashboardEditing(false);
   };
 
-  const updateDashboardLayoutAfterItemChange = (layout: Layout, _oldItem: LayoutItem | null, newItem: LayoutItem | null) => {
-    updateDashboardLayout(layout, newItem);
+  const getDashboardCardClassName = (widgetId: DashboardWidgetId, className = "dashboard-card") => {
+    if (!dashboardInvalidWidgetIds.includes(widgetId)) {
+      return className;
+    }
+
+    return `${className} ${dashboardInvalidPulse % 2 === 0 ? "dashboard-card-invalid-a" : "dashboard-card-invalid-b"}`;
   };
 
   const getDashboardWidgetEditControls = (_widgetId: DashboardWidgetId) => {
@@ -861,24 +896,37 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const storage = getBrowserStorage();
-    const savedGridLayout = storage?.getItem(dashboardGridStorageKey) ?? null;
-    const parsedGridLayout = parseDashboardGridLayout(savedGridLayout);
-    const savedWidgetLayout = storage?.getItem(dashboardWidgetLayoutStorageKey) ?? null;
-    const parsedWidgetLayout = parseDashboardWidgetLayout(savedWidgetLayout);
-    setDashboardGridLayoutSetting(parsedGridLayout);
-    setDashboardWidgetLayout(parsedWidgetLayout);
-
-    if (storage && savedGridLayout !== serializeDashboardGridLayout(parsedGridLayout)) {
-      storage.setItem(dashboardGridStorageKey, serializeDashboardGridLayout(parsedGridLayout));
+    if (!isDashboardGridMeasured || dashboardGridWidth <= 0 || hasLoadedDashboardLayoutRef.current) {
+      return;
     }
+
+    const storage = getBrowserStorage();
+    const savedWidgetLayout = storage?.getItem(dashboardWidgetLayoutStorageKey) ?? null;
+    const previousWidgetLayout = storage?.getItem(dashboardPreviousWidgetLayoutStorageKey) ?? null;
+    const tightWidgetLayout = storage?.getItem(dashboardTightWidgetLayoutStorageKey) ?? null;
+    const gaplessWidgetLayout = storage?.getItem(dashboardGaplessWidgetLayoutStorageKey) ?? null;
+    const legacyWidgetLayout = storage?.getItem(dashboardLegacyWidgetLayoutStorageKey) ?? null;
+    const parsedWidgetLayout = savedWidgetLayout
+      ? parseDashboardWidgetLayout(savedWidgetLayout, effectiveDashboardGridSize)
+      : previousWidgetLayout || tightWidgetLayout
+        ? migrateTightDashboardWidgetLayout(previousWidgetLayout ?? tightWidgetLayout, effectiveDashboardGridSize)
+      : gaplessWidgetLayout
+        ? migrateGaplessDashboardWidgetLayout(gaplessWidgetLayout, effectiveDashboardGridSize)
+      : migrateLegacyDashboardWidgetLayout(legacyWidgetLayout, effectiveDashboardGridSize);
+    setDashboardWidgetLayout(parsedWidgetLayout);
+    hasLoadedDashboardLayoutRef.current = true;
+    storage?.removeItem("suhan-dashboard-grid-size");
+    storage?.removeItem(dashboardPreviousWidgetLayoutStorageKey);
+    storage?.removeItem(dashboardTightWidgetLayoutStorageKey);
+    storage?.removeItem(dashboardGaplessWidgetLayoutStorageKey);
+    storage?.removeItem(dashboardLegacyWidgetLayoutStorageKey);
 
     if (storage && savedWidgetLayout !== serializeDashboardWidgetLayout(parsedWidgetLayout)) {
       storage.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(parsedWidgetLayout));
     }
 
     setIsDashboardLayoutReady(true);
-  }, []);
+  }, [dashboardGridWidth, effectiveDashboardGridSize, isDashboardGridMeasured]);
 
   useEffect(() => {
     const projectsUrl = "/api/projects";
@@ -1108,9 +1156,14 @@ export default function Home() {
               <h1 id="dashboard-title">Work Dashboard</h1>
             </div>
             <div className="dashboard-heading-actions">
+              {isDashboardEditing ? (
+                <Button className="dashboard-command-button" onClick={arrangeDashboardLayout} type="button">
+                  정리
+                </Button>
+              ) : null}
               <Button
                 className={isDashboardEditing ? "dashboard-command-button active" : "dashboard-command-button"}
-                onClick={() => setIsDashboardEditing((value) => !value)}
+                onClick={toggleDashboardEditing}
                 type="button"
               >
                 {isDashboardEditing ? "완료" : "편집"}
@@ -1123,6 +1176,7 @@ export default function Home() {
               <GridLayout
                 autoSize
                 className={isDashboardEditing ? "dashboard-grid editing" : "dashboard-grid"}
+                compactor={dashboardGridCompactor}
                 dragConfig={{
                   enabled: isDashboardEditing,
                   handle: ".dashboard-drag-handle",
@@ -1131,21 +1185,21 @@ export default function Home() {
                 }}
                 gridConfig={{
                   cols: effectiveDashboardGridSize,
-                  rowHeight: dashboardGridRowHeight,
-                  margin: [16, 16],
+                  rowHeight: dashboardGridDotSize,
+                  margin: [0, 0],
                   containerPadding: [0, 0],
                   maxRows: Infinity,
                 }}
                 layout={dashboardGridLayout}
-                onDragStop={updateDashboardLayoutAfterItemChange}
-                onResizeStop={updateDashboardLayoutAfterItemChange}
+                onDragStop={updateDashboardLayout}
+                onResizeStop={updateDashboardLayout}
                 positionStrategy={absoluteStrategy}
                 resizeConfig={{ enabled: isDashboardEditing, handles: ["se"] }}
-                style={isDashboardEditing ? { minHeight: dashboardGridEditMinHeight } : undefined}
-                width={dashboardGridWidth}
+                style={dashboardGridStyle}
+                width={dashboardGridPixelWidth}
               >
             <section
-              className="dashboard-card pr-card"
+              className={getDashboardCardClassName("review-prs", "dashboard-card pr-card")}
               id="github"
               key="review-prs"
               aria-labelledby="github-title"
@@ -1194,7 +1248,7 @@ export default function Home() {
             </section>
 
             <section
-              className="dashboard-card"
+              className={getDashboardCardClassName("todo")}
               key="todo"
               aria-labelledby="flow-title"
             >
@@ -1277,7 +1331,7 @@ export default function Home() {
             </section>
 
             <section
-              className="dashboard-card"
+              className={getDashboardCardClassName("projects")}
               key="projects"
               aria-labelledby="projects-title"
             >
@@ -1336,7 +1390,7 @@ export default function Home() {
             </section>
 
             <section
-              className="dashboard-card"
+              className={getDashboardCardClassName("slack-lists")}
               key="slack-lists"
               aria-labelledby="slack-lists-title"
             >
@@ -1386,7 +1440,7 @@ export default function Home() {
             </section>
 
             <section
-              className="dashboard-card workspace-users-card"
+              className={getDashboardCardClassName("workspace-users", "dashboard-card workspace-users-card")}
               key="workspace-users"
               aria-labelledby="workspace-users-title"
             >
@@ -1456,7 +1510,7 @@ export default function Home() {
             </section>
 
             <section
-              className="dashboard-card"
+              className={getDashboardCardClassName("inbox")}
               key="inbox"
               aria-labelledby="inbox-title"
             >

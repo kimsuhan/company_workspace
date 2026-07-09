@@ -450,6 +450,9 @@ Hero photography fills full-width with no rounding. Photo cards inside grids ret
 
 - Settings controls must look like controls, not loose text: group custom inputs in a bordered panel, show compact labels, visible input borders, and focus states.
 - Dashboard edit surfaces may use subtle dotted grid guides only in edit mode.
+- Dashboard edit mode uses a 24px dot snap grid; visible dots and actual drag/resize snap must stay aligned.
+- Dashboard cards keep at least one dot of gutter. Invalid placements are not saved; affected cards use a subtle warning outline and motion cue while edit mode stays active.
+- Layout compaction is explicit through the edit-mode arrange action, not automatic during ordinary drag/resize.
 - Dashboard widget cards keep sharp, low-radius BMW M style borders and avoid nested decorative cards.
 - Creation actions stay in the card or panel header's right edge as a low-weight `+ label` text action. For repeated editable rows, place manual add at the bottom of the list as a full-width `+` affordance so creation follows the list flow.
 - Navigation links such as view-all or settings shortcuts do not share the creation-action row; place them at the end of the card body or in a footer row.
