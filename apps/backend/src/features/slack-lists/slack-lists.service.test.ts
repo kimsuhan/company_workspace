@@ -22,7 +22,7 @@ import {
   type SlackListFieldMapping,
   parseSlackListId,
   readSlackListSourceInput,
-} from "./slack-lists.js";
+} from "./slack-lists.service.js";
 
 const mapping: Record<string, SlackListFieldMapping> = {
   title: { columnId: "ColTitle", type: "text", label: "제목", display: true },

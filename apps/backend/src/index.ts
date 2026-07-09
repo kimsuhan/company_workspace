@@ -2,14 +2,18 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-import { closeDatabase, getPostgresClient, migrateDatabase } from "./db.js";
-import { registerFileRoutes, startFileCleanup } from "./files.js";
-import { registerGithubReviewPrRoutes, startGithubReviewPrPolling } from "./github-review-prs.js";
-import { registerNoteRoutes } from "./notes.js";
-import { registerProjectRoutes, startProjectHealthPolling } from "./projects.js";
-import { registerSlackListRoutes, startSlackListPolling } from "./slack-lists.js";
-import { registerTodoRoutes } from "./todos.js";
-import { registerWorkspaceUserRoutes } from "./workspace-users.js";
+import { closeDatabase, getPostgresClient, migrateDatabase } from "./common/db.js";
+import { registerFileRoutes } from "./features/files/files.controller.js";
+import { startFileCleanup } from "./features/files/files.service.js";
+import { registerGithubReviewPrRoutes } from "./features/github-review-prs/github-review-prs.controller.js";
+import { startGithubReviewPrPolling } from "./features/github-review-prs/github-review-prs.service.js";
+import { registerNoteRoutes } from "./features/notes/notes.controller.js";
+import { registerProjectRoutes } from "./features/projects/projects.controller.js";
+import { startProjectHealthPolling } from "./features/projects/projects.service.js";
+import { registerSlackListRoutes } from "./features/slack-lists/slack-lists.controller.js";
+import { startSlackListPolling } from "./features/slack-lists/slack-lists.service.js";
+import { registerTodoRoutes } from "./features/todos/todos.controller.js";
+import { registerWorkspaceUserRoutes } from "./features/workspace-users/workspace-users.controller.js";
 
 try {
   process.loadEnvFile?.();

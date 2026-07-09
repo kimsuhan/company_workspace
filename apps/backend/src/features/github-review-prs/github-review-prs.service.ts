@@ -1,103 +1,21 @@
-import type { Hono } from "hono";
 import { and, desc, eq, notInArray } from "drizzle-orm";
 import cron from "node-cron";
 
-import { getDb } from "./db.js";
-import { githubReviewPullRequests } from "./schema.js";
+import { getDb } from "../../common/db.js";
+import { githubReviewPullRequests } from "../../common/schema.js";
+import {
+  getGithubBackoffUntil,
+  getGithubReviewSearchQuery,
+  getGithubToken,
+  mapGithubSearchItemToReviewPullRequest,
+} from "./github-review-prs.helper.js";
+import type { GithubPullRequestResponse, GithubSearchItem, GithubSearchResponse, PollState, ReviewPullRequest } from "./github-review-prs.type.js";
 
-const DEFAULT_SEARCH_QUERY = "is:pr is:open user-review-requested:@me archived:false";
 const GITHUB_SEARCH_URL = "https://api.github.com/search/issues";
-
-type GithubSearchItem = {
-  id: number;
-  number: number;
-  title: string;
-  html_url: string;
-  pull_request?: { url: string };
-  repository_url: string;
-  user: { login: string } | null;
-  draft?: boolean;
-  updated_at: string;
-};
-
-type GithubSearchResponse = {
-  items: GithubSearchItem[];
-};
-
-type GithubPullRequestResponse = {
-  head?: { ref?: string };
-};
-
-export type ReviewPullRequest = {
-  githubIssueId: number;
-  repo: string;
-  number: number;
-  title: string;
-  url: string;
-  branchName: string | null;
-  author: string;
-  status: string;
-  isDraft: boolean;
-  isActive: boolean;
-  githubUpdatedAt: string;
-};
-
-type PollState = {
-  etag?: string;
-  backoffUntil?: Date;
-  isPolling: boolean;
-};
+const SSE_HEARTBEAT_MS = 25_000;
 
 const pollState: PollState = { isPolling: false };
 const sseClients = new Set<ReadableStreamDefaultController<string>>();
-const SSE_HEARTBEAT_MS = 25_000;
-
-export function getGithubToken(env: NodeJS.ProcessEnv = process.env): string {
-  const token = env.GITHUB_TOKEN?.trim();
-
-  if (!token) {
-    throw new Error("GITHUB_TOKEN is required");
-  }
-
-  return token;
-}
-
-export function getGithubReviewSearchQuery(env: NodeJS.ProcessEnv = process.env): string {
-  return env.GITHUB_REVIEW_SEARCH_QUERY?.trim() || DEFAULT_SEARCH_QUERY;
-}
-
-export function mapGithubSearchItemToReviewPullRequest(
-  item: GithubSearchItem,
-  branchName: string | null = null,
-): ReviewPullRequest {
-  return {
-    githubIssueId: item.id,
-    repo: item.repository_url.replace("https://api.github.com/repos/", ""),
-    number: item.number,
-    title: item.title,
-    url: item.html_url,
-    branchName,
-    author: item.user?.login ?? "unknown",
-    status: item.draft ? "Draft" : "Review",
-    isDraft: item.draft ?? false,
-    isActive: true,
-    githubUpdatedAt: new Date(item.updated_at).toISOString(),
-  };
-}
-
-export function getGithubBackoffUntil(headers: Headers, now = Date.now()): Date | undefined {
-  const retryAfter = Number(headers.get("retry-after"));
-  if (Number.isFinite(retryAfter) && retryAfter > 0) {
-    return new Date(now + retryAfter * 1000);
-  }
-
-  const resetAt = Number(headers.get("x-ratelimit-reset"));
-  if (Number.isFinite(resetAt) && resetAt > 0) {
-    return new Date(resetAt * 1000);
-  }
-
-  return undefined;
-}
 
 export async function fetchGithubReviewPullRequests(
   env: NodeJS.ProcessEnv = process.env,
@@ -139,24 +57,6 @@ export async function fetchGithubReviewPullRequests(
       mapGithubSearchItemToReviewPullRequest(item, await fetchGithubPullRequestBranchName(item, headers)),
     ),
   );
-}
-
-async function fetchGithubPullRequestBranchName(item: GithubSearchItem, headers: Headers): Promise<string | null> {
-  if (!item.pull_request?.url) {
-    return null;
-  }
-
-  const detailHeaders = new Headers(headers);
-  detailHeaders.delete("if-none-match");
-
-  const response = await fetch(item.pull_request.url, { headers: detailHeaders });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const data = (await response.json()) as GithubPullRequestResponse;
-  return data.head?.ref?.trim() || null;
 }
 
 export async function listReviewPullRequests(): Promise<ReviewPullRequest[]> {
@@ -272,40 +172,48 @@ export function startGithubReviewPrPolling(): () => void {
   return () => task.stop();
 }
 
-export function registerGithubReviewPrRoutes(app: Hono): void {
-  app.get("/github/review-prs", async (c) => c.json(await listReviewPullRequests()));
-  app.get("/github/review-prs/events", async () => {
-    let client: ReadableStreamDefaultController<string> | undefined;
-    let heartbeat: NodeJS.Timeout | undefined;
-    const stream = new ReadableStream<string>({
-      async start(controller) {
-        client = controller;
-        sseClients.add(controller);
-        controller.enqueue("retry: 5000\n\n");
-        controller.enqueue(`data: ${JSON.stringify(await listReviewPullRequests())}\n\n`);
-        heartbeat = setInterval(() => {
-          controller.enqueue(": ping\n\n");
-        }, SSE_HEARTBEAT_MS);
-      },
-      cancel() {
-        if (client) {
-          sseClients.delete(client);
-        }
+export function createReviewPullRequestEventStream(): ReadableStream<string> {
+  let client: ReadableStreamDefaultController<string> | undefined;
+  let heartbeat: NodeJS.Timeout | undefined;
 
-        if (heartbeat) {
-          clearInterval(heartbeat);
-        }
-      },
-    });
+  return new ReadableStream<string>({
+    async start(controller) {
+      client = controller;
+      sseClients.add(controller);
+      controller.enqueue("retry: 5000\n\n");
+      controller.enqueue(`data: ${JSON.stringify(await listReviewPullRequests())}\n\n`);
+      heartbeat = setInterval(() => {
+        controller.enqueue(": ping\n\n");
+      }, SSE_HEARTBEAT_MS);
+    },
+    cancel() {
+      if (client) {
+        sseClients.delete(client);
+      }
 
-    return new Response(stream, {
-      headers: {
-        "cache-control": "no-cache",
-        connection: "keep-alive",
-        "content-type": "text/event-stream",
-      },
-    });
+      if (heartbeat) {
+        clearInterval(heartbeat);
+      }
+    },
   });
+}
+
+async function fetchGithubPullRequestBranchName(item: GithubSearchItem, headers: Headers): Promise<string | null> {
+  if (!item.pull_request?.url) {
+    return null;
+  }
+
+  const detailHeaders = new Headers(headers);
+  detailHeaders.delete("if-none-match");
+
+  const response = await fetch(item.pull_request.url, { headers: detailHeaders });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as GithubPullRequestResponse;
+  return data.head?.ref?.trim() || null;
 }
 
 function broadcastReviewPullRequests(pullRequests: ReviewPullRequest[]): void {

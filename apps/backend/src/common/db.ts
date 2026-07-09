@@ -29,7 +29,7 @@ export function getDb(): ReturnType<typeof drizzle> {
 }
 
 export function getMigrationsFolder(moduleUrl: string | URL = import.meta.url): string {
-  return join(dirname(dirname(fileURLToPath(moduleUrl))), "drizzle");
+  return join(dirname(dirname(dirname(fileURLToPath(moduleUrl)))), "drizzle");
 }
 
 export async function migrateDatabase(): Promise<void> {

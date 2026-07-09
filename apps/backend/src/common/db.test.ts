@@ -19,14 +19,14 @@ test("getDatabaseUrl returns DATABASE_URL", () => {
 
 test("getMigrationsFolder resolves drizzle folder from src", () => {
   assert.match(
-    getMigrationsFolder(new URL("file:///workspace/apps/backend/src/db.ts")),
+    getMigrationsFolder(new URL("file:///workspace/apps/backend/src/common/db.ts")),
     /\/workspace\/apps\/backend\/drizzle$/,
   );
 });
 
 test("getMigrationsFolder resolves drizzle folder from dist", () => {
   assert.match(
-    getMigrationsFolder(new URL("file:///workspace/apps/backend/dist/db.js")),
+    getMigrationsFolder(new URL("file:///workspace/apps/backend/dist/common/db.js")),
     /\/workspace\/apps\/backend\/drizzle$/,
   );
 });

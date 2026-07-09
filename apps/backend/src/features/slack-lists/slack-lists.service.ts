@@ -1,161 +1,36 @@
-import type { Hono } from "hono";
 import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import cron from "node-cron";
 
-import { getDb } from "./db.js";
-import { slackListItems, slackListSources, slackSettings, workspaceUsers } from "./schema.js";
+import { getDb } from "../../common/db.js";
+import { slackListItems, slackListSources, slackSettings, workspaceUsers } from "../../common/schema.js";
+import type {
+  SlackListDownloadGetResponse,
+  SlackListDownloadStartResponse,
+  SlackListFieldMapping,
+  SlackListFieldPreview,
+  SlackListFieldRole,
+  SlackListFilter,
+  SlackListFilterCondition,
+  SlackListItem,
+  SlackListItemField,
+  SlackListItemInfoResponse,
+  SlackListItemResponse,
+  SlackListItemRow,
+  SlackListItemsResponse,
+  SlackListItemUpdateResponse,
+  SlackListSchemaColumn,
+  SlackListSourceInput,
+  SlackListSourceRow,
+  SlackMappedField,
+  WorkspaceUserRow,
+  WorkspaceUserSummary,
+} from "./slack-lists.type.js";
+
+export type { SlackListFieldMapping, SlackListFieldRole, SlackMappedField } from "./slack-lists.type.js";
 
 const SLACK_API_URL = "https://slack.com/api";
 const SSE_HEARTBEAT_MS = 25_000;
 const DEFAULT_SYNC_CRON = "*/5 * * * *";
-
-export type SlackListFieldMapping = {
-  columnId?: string;
-  key?: string;
-  type?: string;
-  label?: string;
-  sampleValue?: string;
-  optionLabels?: Record<string, string>;
-  dashboardValues?: string[];
-  inProgressValues?: string[];
-  doneValues?: string[];
-  display?: boolean;
-  writable?: boolean;
-  role?: SlackListFieldRole;
-};
-
-export type SlackMappedField = {
-  label: string;
-  value: unknown;
-  type: string;
-  display: boolean;
-  writable: boolean;
-  columnId: string | null;
-  dashboardValues?: string[];
-  role?: SlackListFieldRole;
-  userIds?: string[];
-};
-
-export type SlackListFieldRole = "assignee" | "status" | "title" | "done" | "none";
-
-type WorkspaceUserSummary = {
-  id: number;
-  name: string;
-  slackUserId: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type SlackListFilterCondition = {
-  field: string;
-  op: "eq" | "in" | "contains" | "exists";
-  value?: unknown;
-};
-
-type SlackListFilter = {
-  all?: SlackListFilterCondition[];
-};
-
-type SlackListItemField = {
-  key?: string;
-  value?: unknown;
-  column_id?: string;
-  text?: string;
-  select?: string[];
-  user?: string[];
-  channel?: string[];
-  date?: string[];
-  number?: number[];
-  checkbox?: boolean[];
-  email?: string[];
-  phone?: string[];
-  rating?: number[];
-  attachment?: string[];
-  message?: { value?: string; channel_id?: string; ts?: string; thread_ts?: string }[];
-  link?: { originalUrl?: string; displayName?: string }[];
-};
-
-type SlackListItem = {
-  id: string;
-  list_id: string;
-  date_created?: number;
-  updated_timestamp?: string;
-  fields?: SlackListItemField[];
-  archived?: boolean;
-};
-
-type SlackListSchemaColumn = {
-  id?: string;
-  name?: string;
-  key?: string;
-  type?: string;
-  options?: {
-    choices?: { value?: string; label?: string }[];
-  };
-};
-
-type SlackListItemsResponse = {
-  ok: boolean;
-  items?: SlackListItem[];
-  response_metadata?: { next_cursor?: string };
-  error?: string;
-};
-
-type SlackListItemInfoResponse = {
-  ok: boolean;
-  list?: {
-    list_metadata?: {
-      schema?: SlackListSchemaColumn[];
-    };
-  };
-  error?: string;
-};
-
-type SlackListDownloadStartResponse = {
-  ok: boolean;
-  job_id?: string;
-  error?: string;
-};
-
-type SlackListDownloadGetResponse = {
-  ok: boolean;
-  status?: string;
-  download_url?: string;
-  error?: string;
-};
-
-type SlackListItemUpdateResponse = {
-  ok: boolean;
-  error?: string;
-};
-
-type SlackListFieldPreview = {
-  key: string;
-  label: string;
-  columnId: string;
-  type: string;
-  sampleValue: string;
-  optionLabels?: Record<string, string>;
-  display: boolean;
-  writable: boolean;
-};
-
-type SlackListSourceRow = typeof slackListSources.$inferSelect;
-type SlackListItemRow = typeof slackListItems.$inferSelect;
-type WorkspaceUserRow = typeof workspaceUsers.$inferSelect;
-
-type SlackListSourceInput = {
-  name?: unknown;
-  listId?: unknown;
-  fieldMapping?: unknown;
-  fieldMappings?: unknown;
-  filterConfig?: unknown;
-  filterRules?: unknown;
-  isActive?: unknown;
-};
-
-type SlackListItemResponse = ReturnType<typeof mapSlackListItemRow>;
 
 const sseClients = new Set<ReadableStreamDefaultController<string>>();
 
@@ -538,219 +413,205 @@ export function startSlackListPolling(): () => void {
   return () => task.stop();
 }
 
-export function registerSlackListRoutes(app: Hono): void {
-  app.get("/slack/settings", async (c) => {
-    const token = await getStoredSlackToken();
-    return c.json({ hasToken: !!token, tokenPreview: maskSlackToken(token) });
-  });
+export async function getSlackSettings(): Promise<{ hasToken: boolean; tokenPreview: string | null }> {
+  const token = await getStoredSlackToken();
+  return { hasToken: !!token, tokenPreview: maskSlackToken(token) };
+}
 
-  app.put("/slack/settings", async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { token?: unknown };
-    const token = readRequiredString(body.token, "token");
-    const now = new Date();
-    await getDb()
-      .insert(slackSettings)
-      .values({ id: 1, botToken: token, createdAt: now, updatedAt: now })
-      .onConflictDoUpdate({ target: slackSettings.id, set: { botToken: token, updatedAt: now } });
+export async function saveSlackToken(input: unknown): Promise<{ hasToken: true; tokenPreview: string | null }> {
+  const body = input && typeof input === "object" ? (input as { token?: unknown }) : {};
+  const token = readRequiredString(body.token, "token");
+  const now = new Date();
+  await getDb()
+    .insert(slackSettings)
+    .values({ id: 1, botToken: token, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({ target: slackSettings.id, set: { botToken: token, updatedAt: now } });
 
-    return c.json({ hasToken: true, tokenPreview: maskSlackToken(token) });
-  });
+  return { hasToken: true, tokenPreview: maskSlackToken(token) };
+}
 
-  app.post("/slack/settings/test", async (c) => {
-    const token = await getStoredSlackToken();
+export async function testSlackSettings(): Promise<{ ok: true; team: string | null; user: string | null; url: string | null } | { error: string }> {
+  const token = await getStoredSlackToken();
 
-    if (!token) {
-      return c.json({ error: "Slack token is required" }, 400);
+  if (!token) {
+    return { error: "Slack token is required" };
+  }
+
+  const result = await callSlackApi<{ ok: boolean; team?: string; user?: string; url?: string; error?: string }>("auth.test", token, {});
+  return { ok: true, team: result.team ?? null, user: result.user ?? null, url: result.url ?? null };
+}
+
+export async function listSlackListSources(): Promise<ReturnType<typeof mapSlackListSourceRow>[]> {
+  const rows = await getDb()
+    .select()
+    .from(slackListSources)
+    .where(eq(slackListSources.isActive, true))
+    .orderBy(desc(slackListSources.updatedAt));
+  return rows.map(mapSlackListSourceRow);
+}
+
+export async function previewSlackListFields(input: unknown): Promise<
+  | { listId: string; fields: SlackListFieldPreview[]; labelSource: "schema" | "csv" | "items" }
+  | { error: string }
+> {
+  const token = await getStoredSlackToken();
+
+  if (!token) {
+    return { error: "Slack token is required" };
+  }
+
+  const body = input && typeof input === "object" ? (input as { listId?: unknown }) : {};
+  const listId = parseSlackListId(readRequiredString(body.listId, "listId"));
+  const items = await fetchSlackListItemsById(token, listId, 20).catch((error: unknown): SlackListItem[] | { error: string } => {
+    if (error instanceof Error && error.message === "list_not_found") {
+      return { error: "Slack List를 찾지 못했습니다. List ID, 토큰 workspace, 앱의 List 접근 권한을 확인하세요." };
     }
 
-    const result = await callSlackApi<{ ok: boolean; team?: string; user?: string; url?: string; error?: string }>("auth.test", token, {});
-    return c.json({ ok: true, team: result.team ?? null, user: result.user ?? null, url: result.url ?? null });
+    throw error;
   });
 
-  app.get("/slack/lists/sources", async (c) => {
-    const rows = await getDb()
-      .select()
-      .from(slackListSources)
-      .where(eq(slackListSources.isActive, true))
-      .orderBy(desc(slackListSources.updatedAt));
-    return c.json(rows.map(mapSlackListSourceRow));
-  });
+  if (!Array.isArray(items)) {
+    return items;
+  }
 
-  app.post("/slack/lists/fields/preview", async (c) => {
-    const token = await getStoredSlackToken();
+  const itemFields = inferSlackListFieldPreviews(items);
+  const schema = await fetchSlackListSchema(token, listId, items).catch(() => []);
+  const headers = schema.length > 0 ? [] : await fetchSlackListCsvHeaders(token, listId).catch(() => []);
+  const fields =
+    schema.length > 0
+      ? applySlackListSchemaToFieldPreviews(itemFields, schema)
+      : headers.length > 0
+        ? applyCsvHeadersToFieldPreviews(itemFields, headers)
+        : itemFields;
 
-    if (!token) {
-      return c.json({ error: "Slack token is required" }, 400);
-    }
+  return {
+    listId,
+    fields,
+    labelSource: schema.length > 0 ? "schema" : headers.length > 0 ? "csv" : "items",
+  };
+}
 
-    const body = (await c.req.json().catch(() => ({}))) as { listId?: unknown };
-    const listId = parseSlackListId(readRequiredString(body.listId, "listId"));
-    const items = await fetchSlackListItemsById(token, listId, 20).catch((error: unknown): SlackListItem[] | { error: string } => {
-      if (error instanceof Error && error.message === "list_not_found") {
-        return { error: "Slack List를 찾지 못했습니다. List ID, 토큰 workspace, 앱의 List 접근 권한을 확인하세요." };
+export async function createSlackListSource(input: unknown): Promise<ReturnType<typeof mapSlackListSourceRow>> {
+  const values = readSlackListSourceInput((input && typeof input === "object" ? input : {}) as SlackListSourceInput);
+  const [row] = await getDb().insert(slackListSources).values(values).returning();
+  return mapSlackListSourceRow(row);
+}
+
+export async function updateSlackListSource(id: number, input: unknown): Promise<ReturnType<typeof mapSlackListSourceRow> | undefined> {
+  const source = await getActiveSlackListSource(id);
+
+  if (!source) {
+    return undefined;
+  }
+
+  const values = readSlackListSourceInput((input && typeof input === "object" ? input : {}) as SlackListSourceInput, source);
+  const [row] = await getDb().update(slackListSources).set(values).where(eq(slackListSources.id, source.id)).returning();
+  return mapSlackListSourceRow(row);
+}
+
+export async function deleteSlackListSource(id: number): Promise<void> {
+  await getDb()
+    .update(slackListSources)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(eq(slackListSources.id, id));
+  await broadcastSlackListItems(await listSlackListItems());
+}
+
+export async function testSlackListSource(id: number): Promise<{ count: number; items: ReturnType<typeof mapSlackItemForSource>[] } | { error: string; status: 400 | 404 }> {
+  const token = await getStoredSlackToken();
+  const source = await getActiveSlackListSource(id);
+
+  if (!token) {
+    return { error: "Slack token is required", status: 400 };
+  }
+
+  if (!source) {
+    return { error: "Slack list source not found", status: 404 };
+  }
+
+  const items = await fetchSlackListItems(token, source, 10);
+  return { count: items.length, items: items.slice(0, 10).map((item) => mapSlackItemForSource(source, item)) };
+}
+
+export async function syncSlackListSourceAndBroadcast(id: number): Promise<SlackListItemResponse[]> {
+  const items = await syncSlackListSource(id);
+  await broadcastSlackListItems(await listSlackListItems());
+  return items;
+}
+
+export function createSlackListItemEventStream(): ReadableStream<string> {
+  let client: ReadableStreamDefaultController<string> | undefined;
+  let heartbeat: NodeJS.Timeout | undefined;
+
+  return new ReadableStream<string>({
+    async start(controller) {
+      client = controller;
+      sseClients.add(controller);
+      controller.enqueue("retry: 5000\n\n");
+      controller.enqueue(`data: ${JSON.stringify(await listSlackListItems())}\n\n`);
+      heartbeat = setInterval(() => {
+        controller.enqueue(": ping\n\n");
+      }, SSE_HEARTBEAT_MS);
+    },
+    cancel() {
+      if (client) {
+        sseClients.delete(client);
       }
 
-      throw error;
-    });
-
-    if (!Array.isArray(items)) {
-      return c.json(items, 400);
-    }
-
-    const itemFields = inferSlackListFieldPreviews(items);
-    const schema = await fetchSlackListSchema(token, listId, items).catch(() => []);
-    const headers = schema.length > 0 ? [] : await fetchSlackListCsvHeaders(token, listId).catch(() => []);
-    const fields =
-      schema.length > 0
-        ? applySlackListSchemaToFieldPreviews(itemFields, schema)
-        : headers.length > 0
-          ? applyCsvHeadersToFieldPreviews(itemFields, headers)
-          : itemFields;
-
-    return c.json({
-      listId,
-      fields,
-      labelSource: schema.length > 0 ? "schema" : headers.length > 0 ? "csv" : "items",
-    });
-  });
-
-  app.post("/slack/lists/sources", async (c) => {
-    const input = readSlackListSourceInput((await c.req.json().catch(() => ({}))) as SlackListSourceInput);
-    const [row] = await getDb().insert(slackListSources).values(input).returning();
-    return c.json(mapSlackListSourceRow(row));
-  });
-
-  app.patch("/slack/lists/sources/:id", async (c) => {
-    const source = await getActiveSlackListSource(Number(c.req.param("id")));
-
-    if (!source) {
-      return c.json({ error: "Slack list source not found" }, 404);
-    }
-
-    const input = readSlackListSourceInput((await c.req.json().catch(() => ({}))) as SlackListSourceInput, source);
-    const [row] = await getDb().update(slackListSources).set(input).where(eq(slackListSources.id, source.id)).returning();
-    return c.json(mapSlackListSourceRow(row));
-  });
-
-  app.delete("/slack/lists/sources/:id", async (c) => {
-    await getDb()
-      .update(slackListSources)
-      .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(slackListSources.id, Number(c.req.param("id"))));
-    await broadcastSlackListItems(await listSlackListItems());
-    return c.json({ ok: true });
-  });
-
-  app.post("/slack/lists/sources/:id/test", async (c) => {
-    const token = await getStoredSlackToken();
-    const source = await getActiveSlackListSource(Number(c.req.param("id")));
-
-    if (!token) {
-      return c.json({ error: "Slack token is required" }, 400);
-    }
-
-    if (!source) {
-      return c.json({ error: "Slack list source not found" }, 404);
-    }
-
-    const items = await fetchSlackListItems(token, source, 10);
-    return c.json({ count: items.length, items: items.slice(0, 10).map((item) => mapSlackItemForSource(source, item)) });
-  });
-
-  app.post("/slack/lists/sources/:id/sync", async (c) => {
-    const items = await syncSlackListSource(Number(c.req.param("id")));
-    await broadcastSlackListItems(await listSlackListItems());
-    return c.json(items);
-  });
-  app.get("/slack/lists/items", async (c) => c.json(await listSlackListItems()));
-  app.get("/slack/lists/items/events", async () => {
-    let client: ReadableStreamDefaultController<string> | undefined;
-    let heartbeat: NodeJS.Timeout | undefined;
-    const stream = new ReadableStream<string>({
-      async start(controller) {
-        client = controller;
-        sseClients.add(controller);
-        controller.enqueue("retry: 5000\n\n");
-        controller.enqueue(`data: ${JSON.stringify(await listSlackListItems())}\n\n`);
-        heartbeat = setInterval(() => {
-          controller.enqueue(": ping\n\n");
-        }, SSE_HEARTBEAT_MS);
-      },
-      cancel() {
-        if (client) {
-          sseClients.delete(client);
-        }
-
-        if (heartbeat) {
-          clearInterval(heartbeat);
-        }
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "cache-control": "no-cache",
-        connection: "keep-alive",
-        "content-type": "text/event-stream",
-      },
-    });
-  });
-  app.get("/slack/lists/items/:id", async (c) => {
-    const itemId = readRouteId(c.req.param("id"));
-
-    if (itemId === null) {
-      return c.json({ error: "Invalid Slack list item id" }, 400);
-    }
-
-    const item = await getSlackListItem(itemId);
-
-    if (!item) {
-      return c.json({ error: "Slack list item not found" }, 404);
-    }
-
-    const [mappedItem] = await mapSlackListItemRows([item]);
-    return c.json(mappedItem);
-  });
-  app.patch("/slack/lists/items/:id/cells", async (c) => {
-    const itemId = readRouteId(c.req.param("id"));
-
-    if (itemId === null) {
-      return c.json({ error: "Invalid Slack list item id" }, 400);
-    }
-
-    const item = await getSlackListItem(itemId);
-
-    if (!item) {
-      return c.json({ error: "Slack list item not found" }, 404);
-    }
-
-    const source = await getActiveSlackListSource(item.sourceId);
-    const token = await getStoredSlackToken();
-
-    if (!source || !token) {
-      return c.json({ error: "Slack source or token missing" }, 400);
-    }
-
-    const body = (await c.req.json().catch(() => ({}))) as { values?: Record<string, unknown> };
-    const values = body.values && typeof body.values === "object" ? body.values : {};
-    await updateSlackListItemCells(token, source, item.slackItemId, values);
-
-    const mappedFields = { ...(item.mappedFields as Record<string, SlackMappedField>) };
-    for (const [field, value] of Object.entries(values)) {
-      if (mappedFields[field]) {
-        mappedFields[field] = { ...mappedFields[field], value };
+      if (heartbeat) {
+        clearInterval(heartbeat);
       }
-    }
-
-    const [updated] = await getDb()
-      .update(slackListItems)
-      .set({ mappedFields, title: getMappedTitle(mappedFields, readMappingConfig(source.fieldMapping)), lastSeenAt: new Date() })
-      .where(eq(slackListItems.id, item.id))
-      .returning();
-    await broadcastSlackListItems(await listSlackListItems());
-    const [mappedItem] = await mapSlackListItemRows([updated]);
-    return c.json(mappedItem);
+    },
   });
+}
+
+export async function getSlackListItemResponse(id: number): Promise<SlackListItemResponse | undefined> {
+  const item = await getSlackListItem(id);
+
+  if (!item) {
+    return undefined;
+  }
+
+  const [mappedItem] = await mapSlackListItemRows([item]);
+  return mappedItem;
+}
+
+export async function updateSlackListItemCellValues(
+  id: number,
+  input: unknown,
+): Promise<SlackListItemResponse | { error: string } | undefined> {
+  const item = await getSlackListItem(id);
+
+  if (!item) {
+    return undefined;
+  }
+
+  const source = await getActiveSlackListSource(item.sourceId);
+  const token = await getStoredSlackToken();
+
+  if (!source || !token) {
+    return { error: "Slack source or token missing" };
+  }
+
+  const body = input && typeof input === "object" ? (input as { values?: Record<string, unknown> }) : {};
+  const values = body.values && typeof body.values === "object" ? body.values : {};
+  await updateSlackListItemCells(token, source, item.slackItemId, values);
+
+  const mappedFields = { ...(item.mappedFields as Record<string, SlackMappedField>) };
+  for (const [field, value] of Object.entries(values)) {
+    if (mappedFields[field]) {
+      mappedFields[field] = { ...mappedFields[field], value };
+    }
+  }
+
+  const [updated] = await getDb()
+    .update(slackListItems)
+    .set({ mappedFields, title: getMappedTitle(mappedFields, readMappingConfig(source.fieldMapping)), lastSeenAt: new Date() })
+    .where(eq(slackListItems.id, item.id))
+    .returning();
+  await broadcastSlackListItems(await listSlackListItems());
+  const [mappedItem] = await mapSlackListItemRows([updated]);
+  return mappedItem;
 }
 
 async function getStoredSlackToken(): Promise<string | null> {
@@ -1451,7 +1312,7 @@ function readRequiredString(value: unknown, field: string): string {
   return value.trim();
 }
 
-function readRouteId(value: string): number | null {
+export function readRouteId(value: string): number | null {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
 }

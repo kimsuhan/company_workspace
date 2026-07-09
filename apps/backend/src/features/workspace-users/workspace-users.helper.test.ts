@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   getWorkspaceUserSaveErrorMessage,
   readWorkspaceUserInput,
-} from "./workspace-users.js";
+} from "./workspace-users.helper.js";
 
 test("readWorkspaceUserInput requires name and normalizes optional Slack user ID", () => {
   assert.deepEqual(readWorkspaceUserInput({ name: "  김수한  ", slackUserId: " U08HELASRED " }), {

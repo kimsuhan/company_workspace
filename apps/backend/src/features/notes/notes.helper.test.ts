@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { readNoteInput, readNoteKind, readNotePatchInput } from "./notes.js";
+import { readNoteInput, readNoteKind, readNotePatchInput } from "./notes.helper.js";
 
 test("readNoteKind accepts supported note kinds", () => {
   assert.equal(readNoteKind("inbox"), "inbox");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildStoredFileName, extractFileIdsFromContent, findOrphanFileIds, readUploadedFileInput } from "./files.js";
+import { buildStoredFileName, extractFileIdsFromContent, findOrphanFileIds, readUploadedFileInput } from "./files.helper.js";
 
 test("readUploadedFileInput validates required file metadata", () => {
   assert.deepEqual(readUploadedFileInput({ name: " logo.png ", type: "image/png", size: 1024 }), {

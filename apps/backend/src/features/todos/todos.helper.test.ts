@@ -8,8 +8,8 @@ import {
   readTodoColor,
   sortTodoMemos,
   toggleCompletedAt,
-  type TodoMemo,
-} from "./todos.js";
+} from "./todos.helper.js";
+import type { TodoMemo } from "./todos.type.js";
 
 test("readTodoColor accepts hex colors and defaults empty values", () => {
   assert.equal(readTodoColor("#e22718"), "#e22718");

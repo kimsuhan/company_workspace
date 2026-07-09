@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "test": "tsx --test src/*.test.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "build": "tsc",

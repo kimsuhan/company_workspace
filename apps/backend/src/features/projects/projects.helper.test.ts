@@ -3,14 +3,14 @@ import { test } from "node:test";
 
 import {
   buildProjectNodeTree,
-  checkProjectHealth,
   isDescendantProjectNode,
   readProjectHealthTestInput,
   readProjectInput,
   readProjectNodeInput,
   readProjectNodeMoveInput,
-  type ProjectNodeRow,
-} from "./projects.js";
+} from "./projects.helper.js";
+import { checkProjectHealth } from "./projects.service.js";
+import type { ProjectNodeRow } from "./projects.type.js";
 
 test("readProjectInput requires a project name", () => {
   assert.deepEqual(readProjectInput({ name: "  Work  ", description: "  Notes  " }), {

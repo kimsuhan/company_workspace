@@ -5,7 +5,7 @@ import {
   getGithubBackoffUntil,
   getGithubReviewSearchQuery,
   mapGithubSearchItemToReviewPullRequest,
-} from "./github-review-prs.js";
+} from "./github-review-prs.helper.js";
 
 test("getGithubReviewSearchQuery defaults to direct review requests", () => {
   assert.equal(
