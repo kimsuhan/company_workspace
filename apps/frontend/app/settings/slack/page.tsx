@@ -1,6 +1,7 @@
 "use client";
 
-import { CircleHelp, Eye, EyeOff, Pencil, PencilOff, Plus, RefreshCw, TestTube2, Trash2, X } from "lucide-react";
+import { Select } from "@base-ui/react/select";
+import { Check, ChevronDown, CircleHelp, Eye, EyeOff, ListChecks, ListX, Pencil, PencilOff, Plus, RefreshCw, TestTube2, Trash2, X } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 
@@ -31,12 +32,15 @@ type FieldMappingDraft = {
   columnId: string;
   type: string;
   sampleValue?: string;
+  optionLabels?: Record<string, string>;
+  inProgressValues?: string[];
+  doneValues?: string[];
   display: boolean;
   writable: boolean;
   role: FieldRole;
 };
 
-type FieldRole = "assignee" | "status" | "title" | "done" | "none";
+type FieldRole = "assignee" | "status" | "title" | "none";
 
 type FilterDraft = {
   id: string;
@@ -54,7 +58,6 @@ const fieldRoleOptions: { value: FieldRole; label: string }[] = [
   { value: "title", label: "제목" },
   { value: "assignee", label: "담당자" },
   { value: "status", label: "상태" },
-  { value: "done", label: "완료" },
 ];
 const defaultFieldMappings: FieldMappingDraft[] = [
   { id: "field-title", key: "title", columnId: "Col...", type: "text", label: "제목", sampleValue: "", display: true, writable: false, role: "title" },
@@ -84,6 +87,7 @@ export default function SettingsSlackPage() {
   const [isTestingToken, setIsTestingToken] = useState(false);
   const [isSavingSource, setIsSavingSource] = useState(false);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+  const [expandedOptionFieldId, setExpandedOptionFieldId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadSlackSettings();
@@ -187,10 +191,13 @@ export default function SettingsSlackPage() {
       const body = {
         name: nameDraft.trim(),
         listId: listIdDraft.trim(),
-        fieldMappings: fieldMappingDraft.map(({ id: _id, ...field }) => ({
-          ...field,
-          key: createFieldKey(field.label || field.key || field.columnId),
-        })),
+        fieldMappings: fieldMappingDraft.map((draft) => {
+          const { id: _id, ...field } = limitStatusRoleValues(draft, filterConfigDraft);
+          return {
+            ...field,
+            key: createFieldKey(field.label || field.key || field.columnId),
+          };
+        }),
         filterRules: filterConfigDraft.map(({ id: _id, ...filter }) => ({
           ...filter,
           field: keyByDraftKey.get(filter.field) ?? filter.field,
@@ -257,6 +264,7 @@ export default function SettingsSlackPage() {
 
       setListIdDraft(result.listId ?? listIdDraft.trim());
       setFieldMappingDraft(dedupeFieldRoles(result.fields.map((field) => ({ ...field, id: createDraftId("field"), role: normalizeFieldRole(field.role) || guessFieldRole(field) }))));
+      setExpandedOptionFieldId(null);
       setFilterConfigDraft((rows) => rows.map((row) => (result.fields?.some((field) => field.key === row.field) ? row : { ...row, field: result.fields?.[0]?.key ?? row.field })));
       setMessage(
         result.labelSource === "schema"
@@ -312,6 +320,7 @@ export default function SettingsSlackPage() {
     setListIdDraft("");
     setFieldMappingDraft(defaultFieldMappings.map((row) => ({ ...row })));
     setFilterConfigDraft(defaultFilterRules);
+    setExpandedOptionFieldId(null);
     setMessage(null);
     setIsSourceFormOpen(true);
   };
@@ -322,12 +331,14 @@ export default function SettingsSlackPage() {
     setListIdDraft(source.listId);
     setFieldMappingDraft(mappingToDraftRows(source.fieldMapping));
     setFilterConfigDraft(filterToDraftRows(source.filterConfig));
+    setExpandedOptionFieldId(null);
     setMessage(null);
     setIsSourceFormOpen(true);
   };
 
   const closeSourceForm = () => {
     setIsSourceFormOpen(false);
+    setExpandedOptionFieldId(null);
   };
 
   return (
@@ -479,7 +490,7 @@ export default function SettingsSlackPage() {
           <form className="settings-form" onSubmit={saveSource}>
             <Label className="field">
               <span>이름</span>
-              <Input value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="[KJ] 고객 요청 사항" />
+              <Input value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="고객 요청 사항" />
             </Label>
             <div className="field">
               <div className="field-label-row">
@@ -495,18 +506,18 @@ export default function SettingsSlackPage() {
                   <span className="sr-only">확인 방법</span>
                 </Button>
               </div>
-              <div className="slack-list-id-row">
+              <div className="slack-list-id-group">
                 <Input id="slack-list-id" value={listIdDraft} onChange={(event) => setListIdDraft(event.target.value)} placeholder="F... 또는 Slack List 링크" />
                 <Button
-                  className="secondary-button compact-button slack-field-action-button slack-load-fields-button is-active"
+                  className={`secondary-button compact-button slack-list-id-action ${isLoadingFields ? "is-loading" : ""}`}
                   type="button"
                   disabled={isLoadingFields || !listIdDraft.trim()}
                   aria-label={isLoadingFields ? "필드 불러오는 중" : "필드 불러오기"}
                   title={isLoadingFields ? "필드 불러오는 중" : "필드 불러오기"}
                   onClick={() => void loadFieldsFromSlack()}
                 >
-                  <RefreshCw size={15} />
-                  <span>{isLoadingFields ? "로딩" : "불러오기"}</span>
+                  <RefreshCw data-icon="inline-start" size={15} />
+                  <span>{isLoadingFields ? "불러오는 중" : "필드 불러오기"}</span>
                 </Button>
               </div>
             </div>
@@ -530,68 +541,95 @@ export default function SettingsSlackPage() {
                 </div>
               </div>
               <div className="slack-config-list">
-                {fieldMappingDraft.map((field) => (
-                  <div className="slack-config-row" key={field.id}>
-                    <div className="slack-config-main">
-                      <label>
-                        <span>표시명</span>
-                        <Input value={field.label} onChange={(event) => setFieldMappingDraft((rows) => updateRow(rows, field.id, { label: event.target.value }))} placeholder="표시명 제목" />
-                      </label>
-                      <div className="slack-field-meta-line">
-                        <span title={field.columnId}>{field.columnId || "Column ID 없음"}</span>
-                        <span>{field.type}</span>
-                        <span title={field.sampleValue || "샘플 없음"}>샘플: {field.sampleValue || "없음"}</span>
+                {fieldMappingDraft.map((field) => {
+                  const optionEntries = Object.entries(field.optionLabels ?? {});
+                  const hasOptionLabels = field.type === "select" && optionEntries.length > 0;
+                  const isOptionEditorOpen = expandedOptionFieldId === field.id;
+
+                  return (
+                    <div className="slack-config-row" key={field.id}>
+                      <div className="slack-config-main">
+                        <label>
+                          <span>표시명</span>
+                          <Input value={field.label} onChange={(event) => setFieldMappingDraft((rows) => updateRow(rows, field.id, { label: event.target.value }))} placeholder="표시명 제목" />
+                        </label>
+                        <div className="slack-field-meta-line">
+                          <span title={field.columnId}>{field.columnId || "Column ID 없음"}</span>
+                          <span>{field.type}</span>
+                          <span title={field.sampleValue || "샘플 없음"}>샘플: {field.sampleValue || "없음"}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="slack-config-actions">
-                      <label className="slack-role-select">
-                        <span>역할</span>
-                        <select
-                          value={field.role}
-                          onChange={(event) =>
-                            setFieldMappingDraft((rows) => updateFieldRole(rows, field.id, event.target.value as FieldRole))
+                      <div className="slack-config-actions">
+                        <Button
+                          className={`secondary-button compact-button slack-field-action-button ${hasOptionLabels ? (isOptionEditorOpen ? "is-active" : "is-muted") : "is-disabled"}`}
+                          type="button"
+                          disabled={!hasOptionLabels}
+                          aria-expanded={hasOptionLabels ? isOptionEditorOpen : undefined}
+                          aria-label={
+                            hasOptionLabels
+                              ? isOptionEditorOpen
+                                ? "선택 옵션 매핑 닫기"
+                                : "선택 옵션 매핑 열기"
+                              : "선택 옵션 매핑 없음"
                           }
+                          title={hasOptionLabels ? (isOptionEditorOpen ? "옵션 매핑 닫기" : "옵션 매핑") : "옵션 없음"}
+                          onClick={() => setExpandedOptionFieldId((currentId) => (currentId === field.id ? null : field.id))}
                         >
-                          {fieldRoleOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
+                          {hasOptionLabels ? <ListChecks size={15} /> : <ListX size={15} />}
+                          <span>옵션</span>
+                        </Button>
+                        <Button
+                          className={`secondary-button compact-button slack-field-action-button ${field.display ? "is-active" : "is-muted"}`}
+                          type="button"
+                          aria-label={field.display ? "대시보드에 표시 중" : "대시보드 표시 안 함"}
+                          title={field.display ? "표시 중" : "표시 안 함"}
+                          onClick={() => setFieldMappingDraft((rows) => updateRow(rows, field.id, { display: !field.display }))}
+                        >
+                          {field.display ? <Eye size={15} /> : <EyeOff size={15} />}
+                          <span>표시</span>
+                        </Button>
+                        <Button
+                          className={`secondary-button compact-button slack-field-action-button ${field.writable ? "is-active" : "is-muted"}`}
+                          type="button"
+                          aria-label={field.writable ? "Slack 값 수정 허용 중" : "Slack 값 수정 안 함"}
+                          title={field.writable ? "수정 허용" : "수정 안 함"}
+                          onClick={() => setFieldMappingDraft((rows) => updateRow(rows, field.id, { writable: !field.writable }))}
+                        >
+                          {field.writable ? <Pencil size={15} /> : <PencilOff size={15} />}
+                          <span>수정</span>
+                        </Button>
+                        <Button
+                          className="secondary-button compact-button slack-field-action-button is-danger"
+                          type="button"
+                          aria-label="필드 삭제"
+                          title="삭제"
+                          onClick={() => setFieldMappingDraft((rows) => rows.filter((row) => row.id !== field.id))}
+                        >
+                          <Trash2 size={15} />
+                          <span>삭제</span>
+                        </Button>
+                      </div>
+                      {hasOptionLabels && isOptionEditorOpen ? (
+                        <div className="slack-option-editor">
+                          <div className="slack-option-header" aria-hidden="true">
+                            <span>Slack 옵션값</span>
+                            <span>표시명</span>
+                          </div>
+                          {optionEntries.map(([optionValue, optionLabel]) => (
+                            <div className="slack-option-row" key={optionValue}>
+                              <code title={optionValue}>{optionValue}</code>
+                              <Input
+                                value={optionLabel}
+                                onChange={(event) => setFieldMappingDraft((rows) => updateOptionLabel(rows, field.id, optionValue, event.target.value))}
+                                placeholder="대시보드에 표시할 이름"
+                              />
+                            </div>
                           ))}
-                        </select>
-                      </label>
-                      <Button
-                        className={`secondary-button compact-button slack-field-action-button ${field.display ? "is-active" : "is-muted"}`}
-                        type="button"
-                        aria-label={field.display ? "대시보드에 표시 중" : "대시보드 표시 안 함"}
-                        title={field.display ? "표시 중" : "표시 안 함"}
-                        onClick={() => setFieldMappingDraft((rows) => updateRow(rows, field.id, { display: !field.display }))}
-                      >
-                        {field.display ? <Eye size={15} /> : <EyeOff size={15} />}
-                        <span>표시</span>
-                      </Button>
-                      <Button
-                        className={`secondary-button compact-button slack-field-action-button ${field.writable ? "is-active" : "is-muted"}`}
-                        type="button"
-                        aria-label={field.writable ? "Slack 값 수정 허용 중" : "Slack 값 수정 안 함"}
-                        title={field.writable ? "수정 허용" : "수정 안 함"}
-                        onClick={() => setFieldMappingDraft((rows) => updateRow(rows, field.id, { writable: !field.writable }))}
-                      >
-                        {field.writable ? <Pencil size={15} /> : <PencilOff size={15} />}
-                        <span>수정</span>
-                      </Button>
-                      <Button
-                        className="secondary-button compact-button slack-field-action-button is-danger"
-                        type="button"
-                        aria-label="필드 삭제"
-                        title="삭제"
-                        onClick={() => setFieldMappingDraft((rows) => rows.filter((row) => row.id !== field.id))}
-                      >
-                        <Trash2 size={15} />
-                        <span>삭제</span>
-                      </Button>
+                        </div>
+                      ) : null}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <Button
                   className="secondary-button slack-field-add-button"
                   type="button"
@@ -609,9 +647,6 @@ export default function SettingsSlackPage() {
                   <span>필터</span>
                   <p>동기화할 항목만 남기고 싶을 때 조건을 추가합니다.</p>
                 </div>
-                <Button className="secondary-button compact-button" type="button" onClick={() => setFilterConfigDraft((rows) => [...rows, createEmptyFilterRule()])}>
-                  필터 추가
-                </Button>
               </div>
               <div className="slack-config-list">
                 <div className="slack-filter-row slack-config-header" aria-hidden="true">
@@ -620,33 +655,155 @@ export default function SettingsSlackPage() {
                   <span>값</span>
                   <span />
                 </div>
-                {filterConfigDraft.map((filter) => (
-                  <div className="slack-filter-row" key={filter.id}>
-                    <select value={filter.field} onChange={(event) => setFilterConfigDraft((rows) => updateRow(rows, filter.id, { field: event.target.value }))}>
-                      <option value="">필드 선택</option>
-                      {fieldMappingDraft.map((field) => (
-                        <option key={field.id} value={createFieldKey(field.label || field.key || field.columnId)}>
-                          {field.label || field.key}
-                        </option>
-                      ))}
-                    </select>
-                    <select value={filter.op} onChange={(event) => setFilterConfigDraft((rows) => updateRow(rows, filter.id, { op: event.target.value as FilterDraft["op"] }))}>
-                      <option value="eq">같음</option>
-                      <option value="in">포함</option>
-                      <option value="contains">문자 포함</option>
-                      <option value="exists">값 있음</option>
-                    </select>
-                    <Input
-                      value={filter.value}
-                      onChange={(event) => setFilterConfigDraft((rows) => updateRow(rows, filter.id, { value: event.target.value }))}
-                      placeholder={filter.op === "in" ? "미분류, API 작업중" : "값"}
-                      disabled={filter.op === "exists"}
-                    />
-                    <Button className="secondary-button compact-button slack-row-delete" type="button" aria-label="필터 삭제" onClick={() => setFilterConfigDraft((rows) => rows.filter((row) => row.id !== filter.id))}>
-                      <X size={14} />
-                    </Button>
-                  </div>
-                ))}
+                {filterConfigDraft.map((filter) => {
+                  const selectedField = fieldMappingDraft.find((field) => createFieldKey(field.label || field.key || field.columnId) === filter.field || field.key === filter.field);
+                  const optionLabels = Object.values(selectedField?.optionLabels ?? {});
+                  const selectedValues = splitFilterValue(filter.value);
+                  const selectOptions = toSelectOptions(optionLabels, selectedValues);
+
+                  return (
+                    <div className="slack-filter-row" key={filter.id}>
+                      <select value={filter.field} onChange={(event) => setFilterConfigDraft((rows) => updateRow(rows, filter.id, { field: event.target.value, value: "" }))}>
+                        <option value="">필드 선택</option>
+                        {fieldMappingDraft.map((field) => (
+                          <option key={field.id} value={createFieldKey(field.label || field.key || field.columnId)}>
+                            {field.label || field.key}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={filter.op}
+                        onChange={(event) => {
+                          const op = event.target.value as FilterDraft["op"];
+                          setFilterConfigDraft((rows) => updateRow(rows, filter.id, { op, value: op === "exists" ? "" : splitFilterValue(filter.value)[0] ?? filter.value }));
+                        }}
+                      >
+                        <option value="eq">같음</option>
+                        <option value="in">포함</option>
+                        <option value="contains">문자 포함</option>
+                        <option value="exists">값 있음</option>
+                      </select>
+                      {selectOptions.length > 0 && filter.op !== "exists" ? (
+                        filter.op === "in" ? (
+                          <OptionMultiSelect
+                            options={selectOptions}
+                            placeholder="값 선택"
+                            value={selectedValues}
+                            onChange={(values) => setFilterConfigDraft((rows) => updateRow(rows, filter.id, { value: values.join(", ") }))}
+                          />
+                        ) : (
+                          <select
+                            value={filter.value}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              if (!value) return;
+                              setFilterConfigDraft((rows) => updateRow(rows, filter.id, { value }));
+                            }}
+                          >
+                            <option value="">값 선택</option>
+                            {selectOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        )
+                      ) : (
+                        <Input
+                          value={filter.value}
+                          onChange={(event) => setFilterConfigDraft((rows) => updateRow(rows, filter.id, { value: event.target.value }))}
+                          placeholder={filter.op === "in" ? "미분류, API 작업중" : "값"}
+                          disabled={filter.op === "exists"}
+                        />
+                      )}
+                      <Button className="secondary-button compact-button slack-filter-delete-button" type="button" aria-label="필터 삭제" onClick={() => setFilterConfigDraft((rows) => rows.filter((row) => row.id !== filter.id))}>
+                        <X size={14} />
+                      </Button>
+                    </div>
+                  );
+                })}
+                <Button
+                  className="secondary-button slack-field-add-button"
+                  type="button"
+                  aria-label="필터 추가"
+                  title="필터 추가"
+                  onClick={() => setFilterConfigDraft((rows) => [...rows, createEmptyFilterRule()])}
+                >
+                  <Plus size={18} />
+                </Button>
+              </div>
+            </div>
+            <div className="slack-config-panel">
+              <div className="slack-config-section-header">
+                <div>
+                  <span>대시보드 연결</span>
+                  <p>제목, 담당자, 상태로 사용할 Slack 컬럼과 상태값을 고릅니다.</p>
+                </div>
+              </div>
+              <div className="slack-config-list">
+                {fieldRoleOptions
+                  .filter((option) => option.value !== "none")
+                  .map((option) => {
+                    const selectedFieldId = fieldMappingDraft.find((field) => field.role === option.value)?.id ?? "";
+                    const selectedField = fieldMappingDraft.find((field) => field.id === selectedFieldId);
+                    const filteredStatusValues = selectedField ? getFilteredStatusValues(filterConfigDraft, selectedField) : [];
+                    const allowedStatusValues = filteredStatusValues.length > 0 ? filteredStatusValues : Object.values(selectedField?.optionLabels ?? {});
+                    const selectedInProgressValues = (selectedField?.inProgressValues ?? []).filter((value) => filteredStatusValues.length === 0 || filteredStatusValues.includes(value));
+                    const selectedDoneValues = (selectedField?.doneValues ?? []).filter((value) => filteredStatusValues.length === 0 || filteredStatusValues.includes(value));
+                    const selectOptions = toSelectOptions(allowedStatusValues);
+
+                    return (
+                      <div className="slack-role-mapping-group" key={option.value}>
+                        <label className="slack-role-mapping-row">
+                          <span>{option.label}</span>
+                          <select value={selectedFieldId} onChange={(event) => setFieldMappingDraft((rows) => updateFieldRole(rows, event.target.value, option.value))}>
+                            <option value="">선택 안 함</option>
+                            {fieldMappingDraft.map((field) => (
+                              <option key={field.id} value={field.id}>
+                                {field.label || field.key || field.columnId || "이름 없음"}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {option.value === "status" && selectedField && selectOptions.length > 0 ? (
+                          <>
+                            <div className="slack-role-mapping-row">
+                              <span>진행중 상태</span>
+                              <OptionMultiSelect
+                                options={selectOptions}
+                                placeholder="진행중으로 볼 상태 선택"
+                                value={selectedInProgressValues}
+                                onChange={(values) =>
+                                  setFieldMappingDraft((rows) =>
+                                    updateRow(rows, selectedField.id, {
+                                      inProgressValues: values.length > 0 ? values : undefined,
+                                      doneValues: selectedDoneValues.filter((value) => !values.includes(value)),
+                                    }),
+                                  )
+                                }
+                              />
+                            </div>
+                            <div className="slack-role-mapping-row">
+                              <span>완료 상태</span>
+                              <OptionMultiSelect
+                                options={selectOptions}
+                                placeholder="완료로 볼 상태 선택"
+                                value={selectedDoneValues}
+                                onChange={(values) =>
+                                  setFieldMappingDraft((rows) =>
+                                    updateRow(rows, selectedField.id, {
+                                      inProgressValues: selectedInProgressValues.filter((value) => !values.includes(value)),
+                                      doneValues: values.length > 0 ? values : undefined,
+                                    }),
+                                  )
+                                }
+                              />
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
             <div className="settings-form-footer">
@@ -764,18 +921,114 @@ function createFieldKey(value: string): string {
     .replace(/^_+|_+$/g, "") || "field";
 }
 
+function OptionMultiSelect({
+  options,
+  value,
+  placeholder,
+  onChange,
+}: {
+  options: { value: string; label: string }[];
+  value: string[];
+  placeholder: string;
+  onChange: (value: string[]) => void;
+}) {
+  const selectedLabel = value.length > 0 ? value.map((selectedValue) => options.find((option) => option.value === selectedValue)?.label ?? selectedValue).join(", ") : placeholder;
+
+  return (
+    <Select.Root<string, true> multiple modal={false} value={value} onValueChange={(nextValue) => onChange(Array.from(new Set(nextValue)).filter(Boolean))}>
+      <Select.Trigger className="slack-multi-select-trigger">
+        <Select.Value className="slack-multi-select-value">{selectedLabel}</Select.Value>
+        <Select.Icon className="slack-multi-select-icon">
+          <ChevronDown size={16} />
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Positioner className="slack-multi-select-positioner" sideOffset={6}>
+          <Select.Popup className="slack-multi-select-popup">
+            <Select.List className="slack-multi-select-list">
+              {options.map((option) => (
+                <Select.Item className="slack-multi-select-item" key={option.value} value={option.value}>
+                  <Select.ItemIndicator className="slack-multi-select-check" keepMounted>
+                    <Check size={15} />
+                  </Select.ItemIndicator>
+                  <Select.ItemText>{option.label}</Select.ItemText>
+                </Select.Item>
+              ))}
+            </Select.List>
+          </Select.Popup>
+        </Select.Positioner>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
 function updateRow<T extends { id: string }>(rows: T[], id: string, patch: Partial<T>): T[] {
   return rows.map((row) => (row.id === id ? { ...row, ...patch } : row));
 }
 
 function updateFieldRole(rows: FieldMappingDraft[], id: string, role: FieldRole): FieldMappingDraft[] {
   return rows.map((row) => {
-    if (row.id === id) {
-      return { ...row, role };
+    if (role !== "none" && row.role === role && row.id !== id) {
+      return { ...row, role: "none", inProgressValues: role === "status" ? undefined : row.inProgressValues, doneValues: role === "status" ? undefined : row.doneValues };
     }
 
-    return role !== "none" && row.role === role ? { ...row, role: "none" } : row;
+    return row.id === id
+      ? {
+          ...row,
+          role,
+          inProgressValues: role === "status" ? row.inProgressValues : undefined,
+          doneValues: role === "status" ? row.doneValues : undefined,
+        }
+      : row;
   });
+}
+
+function updateOptionLabel(rows: FieldMappingDraft[], id: string, optionValue: string, label: string): FieldMappingDraft[] {
+  return rows.map((row) => {
+    if (row.id !== id) {
+      return row;
+    }
+
+    return {
+      ...row,
+      optionLabels: {
+        ...(row.optionLabels ?? {}),
+        [optionValue]: label,
+      },
+    };
+  });
+}
+
+function splitFilterValue(value: string): string[] {
+  return value.split(",").map((part) => part.trim()).filter(Boolean);
+}
+
+function toSelectOptions(optionLabels: string[], selectedValues: string[] = []): { value: string; label: string }[] {
+  return Array.from(new Set([...selectedValues, ...optionLabels].map((value) => value.trim()).filter(Boolean))).map((value) => ({ value, label: value }));
+}
+
+function getFilteredStatusValues(filters: FilterDraft[], field: FieldMappingDraft): string[] {
+  const fieldNames = new Set([field.key, field.label, field.columnId, createFieldKey(field.label || field.key || field.columnId)].filter(Boolean));
+
+  return Array.from(
+    new Set(
+      filters.flatMap((filter) => (filter.op === "in" && fieldNames.has(filter.field) ? splitFilterValue(filter.value) : [])),
+    ),
+  );
+}
+
+function limitStatusRoleValues(field: FieldMappingDraft, filters: FilterDraft[]): FieldMappingDraft {
+  const allowedValues = field.role === "status" ? getFilteredStatusValues(filters, field) : [];
+
+  if (allowedValues.length === 0) {
+    return field;
+  }
+
+  return {
+    ...field,
+    inProgressValues: field.inProgressValues?.filter((value) => allowedValues.includes(value)),
+    doneValues: field.doneValues?.filter((value) => allowedValues.includes(value)),
+  };
 }
 
 function mappingToDraftRows(value: Record<string, unknown>): FieldMappingDraft[] {
@@ -792,6 +1045,9 @@ function mappingToDraftRows(value: Record<string, unknown>): FieldMappingDraft[]
         type: typeof field.type === "string" ? field.type : "text",
         label: typeof field.label === "string" ? field.label : key,
         sampleValue: typeof field.sampleValue === "string" ? field.sampleValue : "",
+        optionLabels: readOptionLabels(field.optionLabels),
+        inProgressValues: readStringList(field.inProgressValues),
+        doneValues: readStringList(field.doneValues),
         display: field.display !== false,
         writable: field.writable === true,
         role: normalizeFieldRole(field.role) || "none",
@@ -817,7 +1073,28 @@ function dedupeFieldRoles(rows: FieldMappingDraft[]): FieldMappingDraft[] {
 }
 
 function normalizeFieldRole(value: unknown): FieldRole | null {
-  return value === "assignee" || value === "status" || value === "title" || value === "done" || value === "none" ? value : null;
+  return value === "assignee" || value === "status" || value === "title" || value === "none" ? value : null;
+}
+
+function readOptionLabels(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const labels = Object.fromEntries(
+    Object.entries(value).flatMap(([optionValue, label]): [string, string][] =>
+      typeof label === "string" && optionValue.trim() && label.trim() ? [[optionValue.trim(), label.trim()]] : [],
+    ),
+  );
+
+  return Object.keys(labels).length > 0 ? labels : undefined;
+}
+
+function readStringList(value: unknown): string[] | undefined {
+  const values = Array.isArray(value) ? value : [];
+  const strings = values.flatMap((item): string[] => (typeof item === "string" && item.trim() ? [item.trim()] : []));
+
+  return strings.length > 0 ? Array.from(new Set(strings)) : undefined;
 }
 
 function guessFieldRole(field: Pick<FieldMappingDraft, "key" | "label" | "type">): FieldRole {
@@ -826,10 +1103,6 @@ function guessFieldRole(field: Pick<FieldMappingDraft, "key" | "label" | "type">
 
   if (type === "user" && (label.includes("assignee") || label.includes("담당자") || label.includes("담당"))) {
     return "assignee";
-  }
-
-  if ((type === "checkbox" || type === "completed") && (label.includes("done") || label.includes("complete") || label.includes("완료"))) {
-    return "done";
   }
 
   if (label.includes("status") || label.includes("상태")) {

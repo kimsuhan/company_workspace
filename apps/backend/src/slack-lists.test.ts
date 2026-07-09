@@ -11,6 +11,7 @@ import {
   getSlackBackoffUntil,
   inferSlackListFieldPreviews,
   isSlackListItemDone,
+  isSlackListItemInProgress,
   mapSlackItemToMappedFields,
   maskSlackToken,
   matchesSlackListFilter,
@@ -24,7 +25,14 @@ import {
 
 const mapping: Record<string, SlackListFieldMapping> = {
   title: { columnId: "ColTitle", type: "text", label: "제목", display: true },
-  status: { columnId: "ColStatus", type: "select", label: "상태", display: true, writable: true },
+  status: {
+    columnId: "ColStatus",
+    type: "select",
+    label: "상태",
+    optionLabels: { OptStatusTodo: "미분류", OptStatusApi: "API 작업중" },
+    display: true,
+    writable: true,
+  },
   assignee: { columnId: "ColAssignee", type: "user", label: "담당자", display: true },
 };
 
@@ -37,7 +45,7 @@ test("mapSlackItemToMappedFields prefers column_id and extracts display values",
       fields: [
         { key: "status", column_id: "OtherColumn", value: "wrong" },
         { key: "title_fallback", column_id: "ColTitle", text: "업무위탁수수료 지급관련" },
-        { key: "status", column_id: "ColStatus", value: "미분류", select: ["미분류"] },
+        { key: "status", column_id: "ColStatus", select: ["OptStatusTodo"] },
         { key: "assignee", column_id: "ColAssignee", value: "U1", user: ["U1"], text: "김수한" },
       ],
     },
@@ -72,7 +80,7 @@ test("matchesSlackListFilter supports eq, in, contains, and exists", () => {
 
 test("buildSlackUpdateCells only builds writable mapped cell updates", () => {
   assert.deepEqual(buildSlackUpdateCells(mapping, "Rec1", { status: "API 작업중" }), [
-    { row_id: "Rec1", column_id: "ColStatus", select: ["API 작업중"] },
+    { row_id: "Rec1", column_id: "ColStatus", select: ["OptStatusApi"] },
   ]);
   assert.throws(() => buildSlackUpdateCells(mapping, "Rec1", { title: "수정" }), /title is not writable/);
 });
@@ -106,7 +114,18 @@ test("readSlackListSourceInput converts UI rows to stored JSON config", () => {
     name: "고객 요청",
     listId: "https://forlong.slack.com/lists/T066G3K50MU/F093EH44RPV",
     fieldMappings: [
-      { key: "status", label: "상태", columnId: "ColStatus", type: "select", sampleValue: "API 작업중", display: true, writable: true },
+      {
+        key: "status",
+        label: "상태",
+        columnId: "ColStatus",
+        type: "select",
+        sampleValue: "API 작업중",
+        optionLabels: { OptStatusApi: "API 작업중" },
+        inProgressValues: ["API 작업중"],
+        doneValues: ["처리완료"],
+        display: true,
+        writable: true,
+      },
     ],
     filterRules: [
       { field: "status", op: "in", value: "미분류, API 작업중" },
@@ -116,7 +135,17 @@ test("readSlackListSourceInput converts UI rows to stored JSON config", () => {
 
   assert.equal(input.listId, "F093EH44RPV");
   assert.deepEqual(input.fieldMapping, {
-    status: { columnId: "ColStatus", type: "select", label: "상태", sampleValue: "API 작업중", display: true, writable: true },
+    status: {
+      columnId: "ColStatus",
+      type: "select",
+      label: "상태",
+      sampleValue: "API 작업중",
+      optionLabels: { OptStatusApi: "API 작업중" },
+      inProgressValues: ["API 작업중"],
+      doneValues: ["처리완료"],
+      display: true,
+      writable: true,
+    },
   });
   assert.deepEqual(input.filterConfig, {
     all: [
@@ -159,6 +188,25 @@ test("role helpers read title, assignee, status, and done fields", () => {
   assert.deepEqual(getAssignedSlackUserIds(fields), ["U0675BWGM6E", "U08HELASRED"]);
   assert.equal(isSlackListItemDone(fields), false);
   assert.equal(isSlackListItemDone({ ...fields, done: { ...fields.done, value: true } }), true);
+});
+
+test("isSlackListItemDone treats configured status values as done", () => {
+  const fields: Record<string, SlackMappedField> = {
+    status: { label: "상태", value: "처리완료", type: "select", display: true, writable: false, columnId: "ColStatus", role: "status" },
+  };
+
+  assert.equal(isSlackListItemDone(fields, { status: { role: "status", doneValues: ["처리완료"] } }), true);
+  assert.equal(isSlackListItemDone(fields, { status: { role: "status", doneValues: ["API 작업중"] } }), false);
+});
+
+test("isSlackListItemInProgress uses configured status values when present", () => {
+  const fields: Record<string, SlackMappedField> = {
+    status: { label: "상태", value: "API 작업중", type: "select", display: true, writable: false, columnId: "ColStatus", role: "status" },
+  };
+
+  assert.equal(isSlackListItemInProgress(fields, { status: { role: "status", inProgressValues: ["API 작업중"] } }), true);
+  assert.equal(isSlackListItemInProgress(fields, { status: { role: "status", inProgressValues: ["처리완료"] } }), false);
+  assert.equal(isSlackListItemInProgress(fields, { status: { role: "status" } }), true);
 });
 
 test("inferSlackListFieldPreviews builds mapping rows from sample item fields", () => {
@@ -228,7 +276,16 @@ test("applySlackListSchemaToFieldPreviews uses Slack schema names and keeps samp
     [
       { key: "name", label: "요청사항 상세", columnId: "ColTitle", type: "text", sampleValue: "업무", display: true, writable: false },
       { key: "assignee", label: "담당자", columnId: "Col01", type: "user", sampleValue: "U1", display: true, writable: false },
-      { key: "status", label: "상태", columnId: "ColStatus", type: "select", sampleValue: "미분류", display: true, writable: false },
+      {
+        key: "status",
+        label: "상태",
+        columnId: "ColStatus",
+        type: "select",
+        sampleValue: "미분류",
+        optionLabels: { Opt1: "미분류" },
+        display: true,
+        writable: false,
+      },
     ],
   );
 });

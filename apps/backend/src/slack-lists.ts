@@ -15,6 +15,9 @@ export type SlackListFieldMapping = {
   type?: string;
   label?: string;
   sampleValue?: string;
+  optionLabels?: Record<string, string>;
+  inProgressValues?: string[];
+  doneValues?: string[];
   display?: boolean;
   writable?: boolean;
   role?: SlackListFieldRole;
@@ -131,6 +134,7 @@ type SlackListFieldPreview = {
   columnId: string;
   type: string;
   sampleValue: string;
+  optionLabels?: Record<string, string>;
   display: boolean;
   writable: boolean;
 };
@@ -215,7 +219,7 @@ export function mapSlackItemToMappedFields(
     const userIds = field ? readSlackUserIds(field) : [];
     mapped[name] = {
       label: config.label?.trim() || name,
-      value: field ? readSlackFieldValue(field) : null,
+      value: field ? mapSlackDisplayValue(readSlackFieldValue(field), config) : null,
       type: config.type?.trim() || "text",
       display: config.display !== false,
       writable: config.writable === true,
@@ -276,7 +280,7 @@ export function buildSlackUpdateCells(
     return {
       row_id: rowId,
       column_id: config.columnId,
-      ...toSlackCellValue(config.type ?? "text", value),
+      ...toSlackCellValue(config.type ?? "text", mapSlackWriteValue(value, config)),
     };
   });
 }
@@ -337,6 +341,7 @@ export function applySlackListSchemaToFieldPreviews(previews: SlackListFieldPrev
     }
 
     const preview = previewByColumnId.get(columnId);
+    const optionLabels = getSchemaOptionLabels(column);
     const label = column.name?.trim() || getReadablePreviewName(column.key?.trim() || columnId, index + 1);
 
     return [
@@ -346,6 +351,7 @@ export function applySlackListSchemaToFieldPreviews(previews: SlackListFieldPrev
         columnId,
         type: normalizeSlackSchemaType(column.type?.trim() || preview?.type || "text"),
         sampleValue: getSchemaPreviewSampleValue(preview?.sampleValue ?? "", column),
+        ...(optionLabels ? { optionLabels } : {}),
         display: preview?.display ?? true,
         writable: preview?.writable ?? false,
       },
@@ -460,7 +466,7 @@ export async function syncSlackListSource(sourceId: number): Promise<SlackListIt
   }
 
   const items = await fetchSlackListItems(token, source);
-  return saveSlackListItems(source, items);
+  return saveSlackListItems(await enrichSourceWithSelectOptions(token, source, items), items);
 }
 
 export async function syncSlackListSources(): Promise<void> {
@@ -481,7 +487,8 @@ export async function syncSlackListSources(): Promise<void> {
     }
 
     try {
-      await saveSlackListItems(source, await fetchSlackListItems(token, source));
+      const items = await fetchSlackListItems(token, source);
+      await saveSlackListItems(await enrichSourceWithSelectOptions(token, source, items), items);
       await getDb()
         .update(slackListSources)
         .set({ lastSyncAt: new Date(), lastError: null, syncBackoffUntil: null, updatedAt: new Date() })
@@ -784,6 +791,50 @@ async function fetchSlackListSchema(token: string, listId: string, items: SlackL
   });
 
   return result.list?.list_metadata?.schema ?? [];
+}
+
+async function enrichSourceWithSelectOptions(
+  token: string,
+  source: SlackListSourceRow,
+  items: SlackListItem[],
+): Promise<SlackListSourceRow> {
+  const mapping = readMappingConfig(source.fieldMapping);
+
+  if (!needsSelectOptionLabels(mapping)) {
+    return source;
+  }
+
+  const schema = await fetchSlackListSchema(token, source.listId, items).catch(() => []);
+
+  if (schema.length === 0) {
+    return source;
+  }
+
+  return {
+    ...source,
+    fieldMapping: mergeSchemaOptionLabels(mapping, schema),
+  };
+}
+
+function needsSelectOptionLabels(mapping: Record<string, SlackListFieldMapping>): boolean {
+  return Object.values(mapping).some((field) => {
+    const optionLabels = field.optionLabels ?? {};
+    return field.type === "select" && Object.keys(optionLabels).length === 0;
+  });
+}
+
+function mergeSchemaOptionLabels(
+  mapping: Record<string, SlackListFieldMapping>,
+  schema: SlackListSchemaColumn[],
+): Record<string, SlackListFieldMapping> {
+  const columnById = new Map(schema.flatMap((column) => (column.id ? [[column.id, column]] : [])));
+
+  return Object.fromEntries(
+    Object.entries(mapping).map(([key, field]) => {
+      const optionLabels = field.columnId ? getSchemaOptionLabels(columnById.get(field.columnId)) : undefined;
+      return [key, optionLabels ? { ...field, optionLabels } : field];
+    }),
+  );
 }
 
 async function fetchSlackListCsvHeaders(token: string, listId: string): Promise<string[]> {
@@ -1113,9 +1164,27 @@ export function isSlackListItemDone(
   mapping: Record<string, SlackListFieldMapping> = {},
 ): boolean {
   const roles = getSlackFieldRoles(fields, mapping);
+  const statusField = roles.status ? fields[roles.status] : undefined;
+  const doneValues = roles.status ? mapping[roles.status]?.doneValues ?? [] : [];
+
+  if (statusField && doneValues.length > 0) {
+    return isSlackStatusValue(statusField.value, doneValues);
+  }
+
   const doneField = roles.done ? fields[roles.done] : undefined;
 
   return doneField ? isTruthySlackValue(doneField.value) : false;
+}
+
+export function isSlackListItemInProgress(
+  fields: Record<string, SlackMappedField>,
+  mapping: Record<string, SlackListFieldMapping> = {},
+): boolean {
+  const roles = getSlackFieldRoles(fields, mapping);
+  const statusField = roles.status ? fields[roles.status] : undefined;
+  const inProgressValues = roles.status ? mapping[roles.status]?.inProgressValues ?? [] : [];
+
+  return !statusField || inProgressValues.length === 0 || isSlackStatusValue(statusField.value, inProgressValues);
 }
 
 function inferSlackFieldType(field: SlackListItemField): string {
@@ -1246,6 +1315,16 @@ function isTruthySlackValue(value: unknown): boolean {
   return false;
 }
 
+function isSlackStatusValue(value: unknown, values: string[]): boolean {
+  const allowed = new Set(values.map((item) => item.trim()).filter(Boolean));
+
+  if (Array.isArray(value)) {
+    return value.some((item) => isSlackStatusValue(item, values));
+  }
+
+  return typeof value === "string" && allowed.has(value.trim());
+}
+
 function normalizeSlackSchemaType(type: string): string {
   if (type === "rich_text" || type === "message" || type === "canvas" || type === "created_time" || type === "last_edited_time") {
     return "text";
@@ -1271,21 +1350,54 @@ function normalizeSlackSchemaType(type: string): string {
 }
 
 function getSchemaPreviewSampleValue(sampleValue: string, column: SlackListSchemaColumn): string {
-  const choices = column.options?.choices ?? [];
+  const labelByValue = getSchemaOptionLabels(column);
 
-  if (choices.length === 0 || !sampleValue) {
+  if (!labelByValue || !sampleValue) {
     return sampleValue;
   }
 
-  const labelByValue = new Map(choices.flatMap((choice) => (choice.value && choice.label ? [[choice.value, choice.label]] : [])));
   return sampleValue
     .split(",")
     .map((value) => {
       const trimmed = value.trim();
-      return labelByValue.get(trimmed) ?? trimmed;
+      return labelByValue[trimmed] ?? trimmed;
     })
     .filter(Boolean)
     .join(", ");
+}
+
+function getSchemaOptionLabels(column: SlackListSchemaColumn | undefined): Record<string, string> | undefined {
+  const entries = (column?.options?.choices ?? []).flatMap((choice): [string, string][] =>
+    choice.value && choice.label ? [[choice.value, choice.label]] : [],
+  );
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function mapSlackDisplayValue(value: unknown, config: SlackListFieldMapping): unknown {
+  if (config.type !== "select" || !config.optionLabels) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => mapSlackDisplayValue(item, config));
+  }
+
+  return typeof value === "string" ? config.optionLabels[value] ?? value : value;
+}
+
+function mapSlackWriteValue(value: unknown, config: SlackListFieldMapping): unknown {
+  if (config.type !== "select" || !config.optionLabels) {
+    return value;
+  }
+
+  const valueByLabel = new Map(Object.entries(config.optionLabels).map(([optionValue, label]) => [label, optionValue]));
+
+  if (Array.isArray(value)) {
+    return value.map((item) => mapSlackWriteValue(item, config));
+  }
+
+  return typeof value === "string" ? valueByLabel.get(value) ?? value : value;
 }
 
 function toSlackCellValue(type: string, value: unknown): Record<string, unknown> {
@@ -1332,6 +1444,29 @@ function normalizeJsonObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function readOptionLabels(value: unknown): Record<string, string> | undefined {
+  const object = normalizeJsonObject(value);
+  const labels = Object.fromEntries(
+    Object.entries(object).flatMap(([optionValue, label]): [string, string][] =>
+      typeof label === "string" && optionValue.trim() && label.trim() ? [[optionValue.trim(), label.trim()]] : [],
+    ),
+  );
+
+  return Object.keys(labels).length > 0 ? labels : undefined;
+}
+
+function readStringList(value: unknown): string[] | undefined {
+  const values =
+    typeof value === "string"
+      ? value.split(",")
+      : Array.isArray(value)
+        ? value
+        : [];
+  const strings = values.flatMap((item): string[] => (typeof item === "string" && item.trim() ? [item.trim()] : []));
+
+  return strings.length > 0 ? Array.from(new Set(strings)) : undefined;
+}
+
 export function readMappingConfig(value: unknown): Record<string, SlackListFieldMapping> {
   const parsed = typeof value === "string" ? JSON.parse(value) : value;
   const object = normalizeJsonObject(parsed);
@@ -1345,12 +1480,18 @@ export function readMappingConfig(value: unknown): Record<string, SlackListField
 
     const field = config as Record<string, unknown>;
     const role = readMappingRole(field.role, usedRoles);
+    const optionLabels = readOptionLabels(field.optionLabels);
+    const inProgressValues = readStringList(field.inProgressValues);
+    const doneValues = readStringList(field.doneValues);
     mapping[key] = {
       columnId: typeof field.columnId === "string" ? field.columnId.trim() : undefined,
       key: typeof field.key === "string" ? field.key.trim() : undefined,
       type: typeof field.type === "string" ? field.type.trim() : "text",
       label: typeof field.label === "string" ? field.label.trim() : key,
       sampleValue: typeof field.sampleValue === "string" ? field.sampleValue.trim() : undefined,
+      ...(optionLabels ? { optionLabels } : {}),
+      ...(inProgressValues ? { inProgressValues } : {}),
+      ...(doneValues ? { doneValues } : {}),
       display: field.display !== false,
       writable: field.writable === true,
       ...(role ? { role } : {}),
@@ -1381,11 +1522,17 @@ function readMappingRows(value: unknown): Record<string, SlackListFieldMapping> 
     }
 
     const role = readMappingRole(item.role, usedRoles);
+    const optionLabels = readOptionLabels(item.optionLabels);
+    const inProgressValues = readStringList(item.inProgressValues);
+    const doneValues = readStringList(item.doneValues);
     mapping[key] = {
       columnId: typeof item.columnId === "string" ? item.columnId.trim() : undefined,
       type: typeof item.type === "string" && item.type.trim() ? item.type.trim() : "text",
       label: typeof item.label === "string" && item.label.trim() ? item.label.trim() : key,
       sampleValue: typeof item.sampleValue === "string" ? item.sampleValue.trim() : undefined,
+      ...(optionLabels ? { optionLabels } : {}),
+      ...(inProgressValues ? { inProgressValues } : {}),
+      ...(doneValues ? { doneValues } : {}),
       display: item.display !== false,
       writable: item.writable === true,
       ...(role ? { role } : {}),

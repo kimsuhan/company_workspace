@@ -1821,7 +1821,7 @@ body {
 .comment-input input {
   width: 100%;
   border: 1px solid #3a3a3a;
-  background: #1a1a1a;
+  background-color: #1a1a1a;
   color: #fff;
   font: inherit;
   font-size: 15px;
@@ -1850,16 +1850,53 @@ body {
   padding: 12px;
 }
 
-.slack-list-id-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+.slack-list-id-group {
+  display: flex;
   align-items: center;
+  border: 1px solid #3a3a3a;
+  background-color: #1a1a1a;
 }
 
-.slack-list-id-row .slack-load-fields-button {
-  width: 42px;
-  min-width: 42px;
+.slack-list-id-group:focus-within {
+  border-color: #e6e6e6;
+}
+
+.field .slack-list-id-group input {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  padding-right: 8px;
+}
+
+.field .slack-list-id-group input:focus {
+  border-color: transparent;
+}
+
+.slack-list-id-action {
+  flex: 0 0 auto;
+  height: 34px;
+  min-height: 34px;
+  margin-right: 5px;
+  border-color: transparent;
+  background: transparent;
+  color: #d8d8d8;
+  padding: 0 10px;
+}
+
+.slack-list-id-action:hover:not(:disabled) {
+  border-color: transparent;
+  background: #262626;
+  color: #fff;
+}
+
+.slack-list-id-action.is-loading svg {
+  animation: slack-spin 0.8s linear infinite;
+}
+
+@keyframes slack-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .slack-config-panel {
@@ -1918,7 +1955,8 @@ body {
 }
 
 .slack-filter-row {
-  grid-template-columns: minmax(120px, 1fr) 120px minmax(180px, 1.6fr) auto;
+  grid-template-columns: minmax(160px, 1fr) 120px minmax(240px, 1.6fr) 42px;
+  align-items: start;
 }
 
 .slack-config-header {
@@ -1937,7 +1975,7 @@ body {
   width: 100%;
   min-height: 38px;
   border: 1px solid #3a3a3a;
-  background: #1a1a1a;
+  background-color: #1a1a1a;
   color: #fff;
   font: inherit;
   font-size: 13px;
@@ -1988,41 +2026,17 @@ body {
 }
 
 .slack-config-actions {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(2, 42px);
+  grid-auto-rows: 38px;
+  align-items: start;
   align-self: start;
   gap: 6px;
   padding-top: 18px;
 }
 
-.slack-role-select {
-  display: grid;
-  gap: 4px;
-  width: 92px;
-}
-
-.slack-role-select span {
-  color: #8f8f8f;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.slack-role-select select {
-  height: 38px;
-  min-height: 38px;
-  border: 1px solid #3c3c3c;
-  background: #151515;
-  color: #e6e6e6;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 0 8px;
-}
-
 .slack-field-action-button {
+  position: relative;
   width: 42px;
   min-width: 42px;
   height: 38px;
@@ -2057,6 +2071,15 @@ body {
   color: #686868;
 }
 
+.slack-field-action-button.is-disabled,
+.slack-field-action-button:disabled {
+  border-color: #252525;
+  background: #0d0d0d;
+  color: #555;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
 .slack-field-action-button.is-danger {
   border-color: #3c3c3c;
   background: #151515;
@@ -2065,6 +2088,147 @@ body {
 
 .slack-field-action-button:hover {
   border-color: #7e7e7e;
+  color: #fff;
+}
+
+.slack-option-editor {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #262626;
+  padding-top: 10px;
+}
+
+.slack-option-header,
+.slack-option-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.slack-option-header {
+  color: #8f8f8f;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.slack-option-row code {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #262626;
+  background: #0d0d0d;
+  color: #8f8f8f;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 9px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slack-option-row input {
+  min-height: 36px;
+}
+
+.slack-filter-delete-button {
+  width: 42px;
+  min-width: 42px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+}
+
+.slack-multi-select-trigger {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #3a3a3a;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.slack-multi-select-trigger:hover,
+.slack-multi-select-trigger[data-popup-open] {
+  border-color: #7e7e7e;
+}
+
+.slack-multi-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slack-multi-select-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: #c7c7c7;
+}
+
+.slack-multi-select-positioner {
+  z-index: 90;
+  min-width: var(--anchor-width);
+}
+
+.slack-multi-select-popup {
+  width: var(--anchor-width);
+  max-height: min(280px, var(--available-height));
+  overflow: auto;
+  border: 1px solid #4a4a4a;
+  background: #151515;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+
+.slack-multi-select-list {
+  display: grid;
+  gap: 2px;
+}
+
+.slack-multi-select-item {
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: #d8d8d8;
+  font-size: 13px;
+  line-height: 1.25;
+  padding: 0 10px 0 7px;
+  cursor: pointer;
+  outline: none;
+}
+
+.slack-multi-select-item[data-highlighted] {
+  background: #222;
+  color: #fff;
+}
+
+.slack-multi-select-item[data-selected] {
+  background: #262626;
+  color: #fff;
+}
+
+.slack-multi-select-check {
+  display: inline-flex;
+  justify-content: center;
+  color: transparent;
+}
+
+.slack-multi-select-item[data-selected] .slack-multi-select-check {
   color: #fff;
 }
 
@@ -2082,6 +2246,39 @@ body {
   border-color: #7e7e7e;
   background: #151515;
   color: #fff;
+}
+
+.slack-role-mapping-group {
+  display: grid;
+  gap: 6px;
+}
+
+.slack-role-mapping-row {
+  display: grid;
+  grid-template-columns: 84px minmax(180px, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.slack-role-mapping-row > span {
+  color: #8f8f8f;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.slack-role-mapping-row select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #3a3a3a;
+  background-color: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 0 34px 0 10px;
 }
 
 .tiptap-editor {
@@ -2279,6 +2476,36 @@ body {
   border-color: #e6e6e6;
 }
 
+select,
+.field select,
+.slack-config-row select,
+.slack-filter-row select,
+.slack-role-mapping-row select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #1a1a1a;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23c7c7c7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+  padding-right: 34px;
+  text-overflow: ellipsis;
+}
+
+select:hover,
+select:focus,
+.field select:hover,
+.field select:focus,
+.slack-config-row select:hover,
+.slack-config-row select:focus,
+.slack-filter-row select:hover,
+.slack-filter-row select:focus,
+.slack-role-mapping-row select:hover,
+.slack-role-mapping-row select:focus {
+  border-color: #7e7e7e;
+  outline: none;
+}
+
 .date-picker-trigger {
   min-height: 44px;
   display: flex;
@@ -2446,6 +2673,20 @@ body {
 .danger-button {
   min-height: 40px;
   padding: 0 14px;
+}
+
+.slack-list-id-action.secondary-button {
+  min-height: 34px;
+  border-color: transparent;
+  background: transparent;
+  color: #d8d8d8;
+  padding: 0 10px;
+}
+
+.slack-list-id-action.secondary-button:hover:not(:disabled) {
+  border-color: transparent;
+  background: #262626;
+  color: #fff;
 }
 
 .comment-list {
@@ -2976,9 +3217,14 @@ body {
   .slack-field-grid,
   .slack-config-row,
   .slack-filter-row,
+  .slack-role-mapping-row,
   .slack-config-main,
-  .slack-config-meta,
-  .slack-list-id-row {
+  .slack-config-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .slack-option-header,
+  .slack-option-row {
     grid-template-columns: 1fr;
   }
 

@@ -454,6 +454,7 @@ Hero photography fills full-width with no rounding. Photo cards inside grids ret
 - Creation actions stay in the card or panel header's right edge as a low-weight `+ label` text action. For repeated editable rows, place manual add at the bottom of the list as a full-width `+` affordance so creation follows the list flow.
 - Navigation links such as view-all or settings shortcuts do not share the creation-action row; place them at the end of the card body or in a footer row.
 - Small workspace actions use `{rounded.none}`, transparent backgrounds, muted text, and hover brightness only; avoid pill-shaped buttons.
+- Inline actions inside a text input share the input group's outer border. Do not add a second bordered button box inside the field.
 - Dense settings/admin rows keep the editable display value as the primary control. Technical values such as IDs, inferred type, and sample values sit underneath as small muted meta chips instead of loose gray text.
 - Row-level settings actions use same-size icon buttons with clear active, muted, and destructive states. Prefer familiar icons such as eye/eye-off, pencil/pencil-off, and trash over mixed text toggles.
 - Help affordances sit next to the section or field label as a small circular `?` icon button. Avoid detached help buttons that compete with the form actions.

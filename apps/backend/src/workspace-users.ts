@@ -7,6 +7,7 @@ import {
   getMappedTitle,
   getSlackFieldRoles,
   isSlackListItemDone,
+  isSlackListItemInProgress,
   readMappingConfig,
   type SlackMappedField,
 } from "./slack-lists.js";
@@ -151,7 +152,7 @@ export async function listWorkspaceUserStatuses(): Promise<WorkspaceUserStatus[]
     const fields = normalizeMappedFields(item.mappedFields);
     const mapping = readMappingConfig(source.fieldMapping);
 
-    if (isSlackListItemDone(fields, mapping)) {
+    if (isSlackListItemDone(fields, mapping) || !isSlackListItemInProgress(fields, mapping)) {
       continue;
     }
 
