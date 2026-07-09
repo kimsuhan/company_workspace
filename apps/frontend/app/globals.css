@@ -263,6 +263,7 @@ body {
   background-image: radial-gradient(circle, rgb(255 255 255 / 18%) 1px, transparent 1px);
   background-position: 0 0;
   background-size: var(--dashboard-grid-column-step, 24px) var(--dashboard-grid-row-step, 24px);
+  padding-bottom: calc(var(--dashboard-grid-row-step, 24px) * 8);
 }
 
 .dashboard-grid.editing .react-grid-item {
