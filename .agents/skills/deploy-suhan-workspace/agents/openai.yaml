@@ -1,0 +1,7 @@
+interface:
+  display_name: "Suhan Workspace 배포"
+  short_description: "서브에이전트로 배포하고 완료 상태를 독립 감사"
+  default_prompt: "Use $deploy-suhan-workspace to deploy this project and independently audit the result."
+
+policy:
+  allow_implicit_invocation: false

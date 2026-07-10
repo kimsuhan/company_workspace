@@ -36,17 +36,25 @@ import { newInboxNoteContent } from "@/features/notes/note-defaults";
 
 import {
   arrangeDashboardWidgetLayout,
+  dashboardBrokenWidgetLayoutStorageKey,
+  dashboardFixedWidgetLayoutStorageKey,
   dashboardGaplessWidgetLayoutStorageKey,
+  dashboardGutteredWidgetLayoutStorageKey,
   dashboardGridDotSize,
   dashboardLegacyWidgetLayoutStorageKey,
+  dashboardLooseWidgetLayoutStorageKey,
   dashboardPreviousWidgetLayoutStorageKey,
   dashboardTightWidgetLayoutStorageKey,
   dashboardWidgetLayoutStorageKey,
   dashboardWidgetMaxRows,
   getDashboardDotGridColumns,
+  getDashboardEditingMinRows,
   getInvalidDashboardWidgetIds,
+  migrateFixedDashboardWidgetLayout,
   migrateGaplessDashboardWidgetLayout,
+  migrateGutteredDashboardWidgetLayout,
   migrateLegacyDashboardWidgetLayout,
+  migrateLooseDashboardWidgetLayout,
   migrateTightDashboardWidgetLayout,
   normalizeDashboardWidgetLayout,
   parseDashboardWidgetLayout,
@@ -213,6 +221,7 @@ type ReviewPrContextMenu = {
 };
 
 const todoColorPresets = ["#1c69d4", "#8b5cf6", "#e22718", "#f4b400", "#0fa336", "#7e7e7e"];
+const dashboardGridGutterSize = 16;
 const dashboardGridCompactor = getCompactor(null, false, true);
 
 export default function Home() {
@@ -258,9 +267,12 @@ export default function Home() {
   const [dashboardInvalidWidgetIds, setDashboardInvalidWidgetIds] = useState<DashboardWidgetId[]>([]);
   const [dashboardInvalidPulse, setDashboardInvalidPulse] = useState(0);
   const [isDashboardEditing, setIsDashboardEditing] = useState(false);
+  const [dashboardEditingMinRows, setDashboardEditingMinRows] = useState(0);
   const [isDashboardLayoutReady, setIsDashboardLayoutReady] = useState(false);
   const [now, setNow] = useState(() => new Date());
-  const { containerRef: dashboardGridRef, mounted: isDashboardGridMeasured, width: dashboardGridWidth } = useContainerWidth();
+  const { containerRef: dashboardGridRef, mounted: isDashboardGridMeasured, width: dashboardGridWidth } = useContainerWidth({
+    measureBeforeMount: true,
+  });
   const healthChartRef = useRef<HTMLCanvasElement | null>(null);
   const alertEnabledRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -300,29 +312,30 @@ export default function Home() {
   const isWorkspaceUsersLive = workspaceUsersStatus === "Live";
   const liveServiceCount = [isReviewPrsLive, isTodoLive, isNotesLive, isProjectsLive, isSlackListsLive, isWorkspaceUsersLive].filter(Boolean).length;
   const liveSummaryLabel = liveServiceCount === 6 ? "Live" : liveServiceCount > 0 ? "Partial" : "Offline";
-  const effectiveDashboardGridSize = isDashboardGridMeasured ? getDashboardDotGridColumns(dashboardGridWidth) : 1;
-  const dashboardGridPixelWidth = effectiveDashboardGridSize * dashboardGridDotSize;
+  const dashboardGridColumns = isDashboardGridMeasured ? getDashboardDotGridColumns(dashboardGridWidth) : 1;
+  const dashboardGridPixelWidth = dashboardGridWidth;
   const isDashboardGridReady = isDashboardLayoutReady && isDashboardGridMeasured && dashboardGridWidth > 0;
   const dashboardGridStyle =
     isDashboardEditing
       ? ({
-          "--dashboard-grid-column-step": `${dashboardGridDotSize}px`,
+          "--dashboard-grid-column-step": `${(dashboardGridWidth + dashboardGridGutterSize) / dashboardGridColumns}px`,
+          "--dashboard-grid-editing-min-height": `${dashboardEditingMinRows * dashboardGridDotSize}px`,
           "--dashboard-grid-row-step": `${dashboardGridDotSize}px`,
         } as CSSProperties)
       : undefined;
   const dashboardGridLayout: Layout = [
     ...dashboardWidgetLayout.map((widget) => {
-      const width = Math.min(widget.w, effectiveDashboardGridSize);
+      const width = Math.min(widget.w, dashboardGridColumns);
 
       return {
         i: widget.id,
-        x: Math.min(widget.x, effectiveDashboardGridSize - width),
+        x: Math.min(widget.x, dashboardGridColumns - width),
         y: widget.y,
         w: width,
         h: Math.min(widget.h, dashboardWidgetMaxRows),
         minW: 1,
         minH: 1,
-        maxW: effectiveDashboardGridSize,
+        maxW: dashboardGridColumns,
         maxH: dashboardWidgetMaxRows,
         isDraggable: isDashboardEditing,
         isResizable: isDashboardEditing,
@@ -694,18 +707,22 @@ export default function Home() {
   };
 
   const saveDashboardWidgetLayout = (layout: DashboardWidgetLayout[]) => {
+    if (isDashboardEditing) {
+      setDashboardEditingMinRows((currentRows) => getDashboardEditingMinRows(currentRows, layout));
+    }
+
     setDashboardWidgetLayout(layout);
     getBrowserStorage()?.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(layout));
   };
 
   const updateDashboardLayout = (layout: Layout) => {
-    const nextLayout = validateDashboardWidgetLayout(layout, effectiveDashboardGridSize);
+    const nextLayout = validateDashboardWidgetLayout(layout, dashboardGridColumns);
 
     if (nextLayout) {
       setDashboardInvalidWidgetIds([]);
       saveDashboardWidgetLayout(nextLayout);
     } else {
-      setDashboardInvalidWidgetIds(getInvalidDashboardWidgetIds(layout, effectiveDashboardGridSize));
+      setDashboardInvalidWidgetIds(getInvalidDashboardWidgetIds(layout, dashboardGridColumns));
       setDashboardInvalidPulse((value) => value + 1);
       setDashboardWidgetLayout((currentLayout) => [...currentLayout]);
     }
@@ -713,12 +730,13 @@ export default function Home() {
 
   const arrangeDashboardLayout = () => {
     setDashboardInvalidWidgetIds([]);
-    saveDashboardWidgetLayout(arrangeDashboardWidgetLayout(dashboardWidgetLayout, effectiveDashboardGridSize));
+    saveDashboardWidgetLayout(arrangeDashboardWidgetLayout(dashboardWidgetLayout, dashboardGridColumns));
   };
 
   const toggleDashboardEditing = () => {
     if (!isDashboardEditing) {
       setDashboardInvalidWidgetIds([]);
+      setDashboardEditingMinRows(getDashboardEditingMinRows(0, dashboardWidgetLayout));
       setIsDashboardEditing(true);
       return;
     }
@@ -728,6 +746,7 @@ export default function Home() {
       return;
     }
 
+    setDashboardEditingMinRows(0);
     setIsDashboardEditing(false);
   };
 
@@ -749,7 +768,7 @@ export default function Home() {
         <span
           className="dashboard-drag-handle"
           aria-label="드래그 핸들"
-          title="드래그해서 이동"
+          title="카드 헤더를 드래그해서 이동"
         >
           <GripVertical size={16} />
         </span>
@@ -905,31 +924,45 @@ export default function Home() {
 
     const storage = getBrowserStorage();
     const savedWidgetLayout = storage?.getItem(dashboardWidgetLayoutStorageKey) ?? null;
+    const fixedWidgetLayout = storage?.getItem(dashboardFixedWidgetLayoutStorageKey) ?? null;
+    const looseWidgetLayout = storage?.getItem(dashboardLooseWidgetLayoutStorageKey) ?? null;
+    const gutteredWidgetLayout = storage?.getItem(dashboardGutteredWidgetLayoutStorageKey) ?? null;
+    const brokenWidgetLayout = storage?.getItem(dashboardBrokenWidgetLayoutStorageKey) ?? null;
     const previousWidgetLayout = storage?.getItem(dashboardPreviousWidgetLayoutStorageKey) ?? null;
     const tightWidgetLayout = storage?.getItem(dashboardTightWidgetLayoutStorageKey) ?? null;
     const gaplessWidgetLayout = storage?.getItem(dashboardGaplessWidgetLayoutStorageKey) ?? null;
     const legacyWidgetLayout = storage?.getItem(dashboardLegacyWidgetLayoutStorageKey) ?? null;
     const parsedWidgetLayout = savedWidgetLayout
-      ? parseDashboardWidgetLayout(savedWidgetLayout, effectiveDashboardGridSize)
+      ? parseDashboardWidgetLayout(savedWidgetLayout, dashboardGridColumns)
+      : fixedWidgetLayout
+        ? migrateFixedDashboardWidgetLayout(fixedWidgetLayout, dashboardGridColumns)
+      : looseWidgetLayout
+        ? migrateLooseDashboardWidgetLayout(looseWidgetLayout, dashboardGridColumns)
+      : gutteredWidgetLayout
+        ? migrateGutteredDashboardWidgetLayout(gutteredWidgetLayout, dashboardGridColumns)
       : previousWidgetLayout || tightWidgetLayout
-        ? migrateTightDashboardWidgetLayout(previousWidgetLayout ?? tightWidgetLayout, effectiveDashboardGridSize)
+        ? migrateTightDashboardWidgetLayout(previousWidgetLayout ?? tightWidgetLayout, dashboardGridColumns)
       : gaplessWidgetLayout
-        ? migrateGaplessDashboardWidgetLayout(gaplessWidgetLayout, effectiveDashboardGridSize)
-      : migrateLegacyDashboardWidgetLayout(legacyWidgetLayout, effectiveDashboardGridSize);
+        ? migrateGaplessDashboardWidgetLayout(gaplessWidgetLayout, dashboardGridColumns)
+      : migrateLegacyDashboardWidgetLayout(legacyWidgetLayout, dashboardGridColumns);
     setDashboardWidgetLayout(parsedWidgetLayout);
     hasLoadedDashboardLayoutRef.current = true;
     storage?.removeItem("suhan-dashboard-grid-size");
+    storage?.removeItem(dashboardFixedWidgetLayoutStorageKey);
+    storage?.removeItem(dashboardLooseWidgetLayoutStorageKey);
+    storage?.removeItem(dashboardGutteredWidgetLayoutStorageKey);
+    storage?.removeItem(dashboardBrokenWidgetLayoutStorageKey);
     storage?.removeItem(dashboardPreviousWidgetLayoutStorageKey);
     storage?.removeItem(dashboardTightWidgetLayoutStorageKey);
     storage?.removeItem(dashboardGaplessWidgetLayoutStorageKey);
     storage?.removeItem(dashboardLegacyWidgetLayoutStorageKey);
 
-    if (storage && savedWidgetLayout !== serializeDashboardWidgetLayout(parsedWidgetLayout)) {
+    if (storage && (savedWidgetLayout !== serializeDashboardWidgetLayout(parsedWidgetLayout) || fixedWidgetLayout || looseWidgetLayout || gutteredWidgetLayout || brokenWidgetLayout)) {
       storage.setItem(dashboardWidgetLayoutStorageKey, serializeDashboardWidgetLayout(parsedWidgetLayout));
     }
 
     setIsDashboardLayoutReady(true);
-  }, [dashboardGridWidth, effectiveDashboardGridSize, isDashboardGridMeasured]);
+  }, [dashboardGridColumns, dashboardGridWidth, isDashboardGridMeasured]);
 
   useEffect(() => {
     const projectsUrl = "/api/projects";
@@ -1182,14 +1215,14 @@ export default function Home() {
                 compactor={dashboardGridCompactor}
                 dragConfig={{
                   enabled: isDashboardEditing,
-                  handle: ".dashboard-drag-handle",
-                  cancel: ".dashboard-grid-no-drag",
+                  handle: ".card-header",
+                  cancel: ".dashboard-grid-no-drag, button, a, input, textarea, select, [contenteditable='true']",
                   threshold: 6,
                 }}
                 gridConfig={{
-                  cols: effectiveDashboardGridSize,
-                  rowHeight: dashboardGridDotSize,
-                  margin: [0, 0],
+                  cols: dashboardGridColumns,
+                  rowHeight: dashboardGridDotSize - dashboardGridGutterSize,
+                  margin: [dashboardGridGutterSize, dashboardGridGutterSize],
                   containerPadding: [0, 0],
                   maxRows: Infinity,
                 }}

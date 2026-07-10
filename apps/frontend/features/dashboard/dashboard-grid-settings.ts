@@ -2,11 +2,15 @@ export const dashboardLegacyWidgetLayoutStorageKey = "suhan-dashboard-widget-lay
 export const dashboardGaplessWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v2";
 export const dashboardTightWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v3";
 export const dashboardPreviousWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v4";
-export const dashboardWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v5";
+export const dashboardBrokenWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v5";
+export const dashboardGutteredWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v6";
+export const dashboardLooseWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v7";
+export const dashboardFixedWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v8";
+export const dashboardWidgetLayoutStorageKey = "suhan-dashboard-widget-layout-v9";
 export const dashboardGridDotSize = 24;
 export const dashboardLegacyGridColumns = 12;
 export const dashboardWidgetMaxRows = 80;
-const dashboardWidgetGapColumns = 1;
+const dashboardWidgetGapColumns = 0;
 export const dashboardWidgetIds = ["review-prs", "todo", "projects", "inbox", "slack-lists", "workspace-users"] as const;
 
 export type DashboardWidgetId = (typeof dashboardWidgetIds)[number];
@@ -18,6 +22,10 @@ export type DashboardWidgetLayout = {
   w: number;
   h: number;
 };
+
+export function getDashboardEditingMinRows(currentRows: number, layout: DashboardWidgetLayout[]) {
+  return Math.max(currentRows, 0, ...layout.map((widget) => widget.y + widget.h));
+}
 
 type GridLayoutItem = {
   i: string;
@@ -32,18 +40,29 @@ export function getDashboardDotGridColumns(width: number) {
 }
 
 export function getDefaultDashboardWidgetLayout(gridColumns: number): DashboardWidgetLayout[] {
-  const half = Math.max(1, Math.floor((gridColumns - dashboardWidgetGapColumns) / 2));
-  const rest = Math.max(1, gridColumns - half - dashboardWidgetGapColumns);
-  const rightX = half + dashboardWidgetGapColumns;
-  const rowHeight = 9;
+  if (gridColumns < 3) {
+    return [
+      { id: "slack-lists", x: 0, y: 0, w: gridColumns, h: 15 },
+      { id: "inbox", x: 0, y: 15, w: gridColumns, h: 9 },
+      { id: "workspace-users", x: 0, y: 24, w: gridColumns, h: 35 },
+      { id: "projects", x: 0, y: 59, w: gridColumns, h: 24 },
+      { id: "review-prs", x: 0, y: 83, w: gridColumns, h: 9 },
+      { id: "todo", x: 0, y: 92, w: gridColumns, h: 24 },
+    ];
+  }
+
+  const leftWidth = Math.floor(gridColumns / 3);
+  const middleWidth = Math.floor((gridColumns - leftWidth) / 2);
+  const rightX = leftWidth + middleWidth;
+  const rightWidth = gridColumns - rightX;
 
   return [
-    { id: "review-prs", x: 0, y: 0, w: half, h: rowHeight },
-    { id: "todo", x: rightX, y: 0, w: rest, h: rowHeight },
-    { id: "projects", x: 0, y: 10, w: half, h: rowHeight },
-    { id: "inbox", x: rightX, y: 10, w: rest, h: rowHeight },
-    { id: "slack-lists", x: 0, y: 20, w: gridColumns, h: rowHeight },
-    { id: "workspace-users", x: 0, y: 30, w: gridColumns, h: rowHeight },
+    { id: "slack-lists", x: 0, y: 0, w: leftWidth, h: 15 },
+    { id: "inbox", x: leftWidth, y: 0, w: middleWidth, h: 9 },
+    { id: "workspace-users", x: rightX, y: 0, w: rightWidth, h: 35 },
+    { id: "projects", x: 0, y: 15, w: leftWidth, h: 24 },
+    { id: "review-prs", x: leftWidth, y: 9, w: middleWidth, h: 9 },
+    { id: "todo", x: leftWidth, y: 18, w: middleWidth, h: 24 },
   ];
 }
 
@@ -134,6 +153,80 @@ export function migrateGaplessDashboardWidgetLayout(value: string | null, gridCo
 
 export function migrateTightDashboardWidgetLayout(value: string | null, gridColumns: number): DashboardWidgetLayout[] {
   return getDefaultDashboardWidgetLayout(gridColumns);
+}
+
+export function migrateFixedDashboardWidgetLayout(value: string | null, gridColumns: number): DashboardWidgetLayout[] {
+  if (!value) {
+    return getDefaultDashboardWidgetLayout(gridColumns);
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return getDefaultDashboardWidgetLayout(gridColumns);
+    }
+
+    const layout = normalizeDashboardWidgets(
+      parseDashboardWidgetLayoutItems(
+        parsed,
+        getDefaultDashboardWidgetLayout(dashboardLegacyGridColumns),
+        dashboardLegacyGridColumns,
+        dashboardWidgetMaxRows,
+      ),
+      dashboardLegacyGridColumns,
+    );
+
+    return normalizeDashboardWidgets(
+      scaleDashboardWidgetLayout(layout, dashboardLegacyGridColumns, gridColumns),
+      gridColumns,
+    );
+  } catch {
+    return getDefaultDashboardWidgetLayout(gridColumns);
+  }
+}
+
+export function migrateGutteredDashboardWidgetLayout(value: string | null, gridColumns: number): DashboardWidgetLayout[] {
+  const layout = parseDashboardWidgetLayout(value, dashboardLegacyGridColumns).map((widget) =>
+    expandGutteredDashboardWidget(widget, dashboardLegacyGridColumns),
+  );
+
+  return normalizeDashboardWidgets(scaleDashboardWidgetLayout(layout, dashboardLegacyGridColumns, gridColumns), gridColumns);
+}
+
+export function migrateLooseDashboardWidgetLayout(value: string | null, gridColumns: number): DashboardWidgetLayout[] {
+  const layout = arrangeDashboardWidgetLayout(
+    parseDashboardWidgetLayout(value, dashboardLegacyGridColumns),
+    dashboardLegacyGridColumns,
+  );
+
+  return normalizeDashboardWidgets(scaleDashboardWidgetLayout(layout, dashboardLegacyGridColumns, gridColumns), gridColumns);
+}
+
+function expandGutteredDashboardWidget(widget: DashboardWidgetLayout, gridColumns: number) {
+  if (gridColumns !== dashboardLegacyGridColumns || widget.w !== 3 || (widget.x !== 0 && widget.x !== 4)) {
+    return widget;
+  }
+
+  return { ...widget, w: 4 };
+}
+
+function scaleDashboardWidgetLayout(layout: DashboardWidgetLayout[], sourceColumns: number, targetColumns: number) {
+  if (sourceColumns === targetColumns) {
+    return layout;
+  }
+
+  return layout.map((widget) => {
+    const x = Math.round((widget.x / sourceColumns) * targetColumns);
+    const right = Math.round(((widget.x + widget.w) / sourceColumns) * targetColumns);
+    const width = clampGridNumber(right - x, 1, targetColumns);
+
+    return {
+      ...widget,
+      x: clampGridNumber(x, 0, targetColumns - width),
+      w: width,
+    };
+  });
 }
 
 function addDashboardWidgetGutters(layout: DashboardWidgetLayout[], gridColumns: number) {
