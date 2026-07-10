@@ -2,6 +2,7 @@ node_modules
 .superpowers
 .pnpm-store
 .next
+next-env.d.ts
 dist
 *.tsbuildinfo
 .env
